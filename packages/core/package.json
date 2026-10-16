@@ -1,0 +1,15 @@
+{
+  "name": "@wbz/core",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "libphonenumber-js": "^1.13.15",
+    "zod": "^4.6.7"
+  }
+}

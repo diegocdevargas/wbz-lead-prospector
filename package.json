@@ -1,0 +1,29 @@
+{
+  "name": "wbz-lead-prospector",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @wbz/server dev",
+    "dev:worker": "pnpm --filter @wbz/server dev:worker",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "test": "vitest run",
+    "db:generate": "pnpm --filter @wbz/db generate",
+    "db:migrate": "pnpm --filter @wbz/db migrate",
+    "db:seed": "pnpm --filter @wbz/server seed",
+    "test:unit": "vitest run packages",
+    "db:up": "docker compose up -d --wait postgres"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}

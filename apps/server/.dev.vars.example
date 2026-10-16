@@ -1,0 +1,7 @@
+# Copy to .dev.vars for `pnpm dev:worker`. Neon's WebSocket driver needs a Neon URL (not local Postgres).
+DATABASE_URL=postgres://user:password@ep-xxxx.sa-east-1.aws.neon.tech/prospector?sslmode=require
+SUPPRESSION_SECRET=replace-with-64-random-hex-chars-from-openssl-rand-hex-32
+ENVIRONMENT=development
+AUTH_MODE=basic
+BASIC_AUTH_USER=diego
+BASIC_AUTH_PASSWORD=change-me-long-password
