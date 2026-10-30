@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx",
+    "lib": ["ES2023", "DOM"],
+    "types": ["node", "@cloudflare/workers-types"]
+  },
+  "include": ["src", "test"]
+}

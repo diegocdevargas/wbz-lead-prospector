@@ -1,0 +1,16 @@
+name = "wbz-prospector"
+main = "src/worker.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Non-secret settings. Secrets go in with `wrangler secret put`:
+#   DATABASE_URL, SUPPRESSION_SECRET, CF_ACCESS_AUD (and BASIC_AUTH_* if used)
+[vars]
+ENVIRONMENT = "production"
+AUTH_MODE = "access"
+CF_ACCESS_TEAM_DOMAIN = "CHANGE-ME.cloudflareaccess.com"
+
+# Optional: route the database through Hyperdrive instead of Neon's WebSocket pool.
+# [[hyperdrive]]
+# binding = "HYPERDRIVE"
+# id = "<hyperdrive id>"
