@@ -10,7 +10,8 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "generate": "drizzle-kit generate",
-    "migrate": "tsx src/migrate.ts"
+    "migrate": "tsx src/migrate.ts",
+    "migrate:test": "tsx src/migrate.ts --test"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.0",

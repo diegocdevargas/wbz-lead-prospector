@@ -17,7 +17,8 @@
     "db:migrate": "pnpm --filter @wbz/db migrate",
     "db:seed": "pnpm --filter @wbz/server seed",
     "test:unit": "vitest run packages",
-    "db:up": "docker compose up -d --wait postgres"
+    "db:up": "docker compose up -d --wait postgres",
+    "db:migrate:test": "pnpm --filter @wbz/db migrate:test"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",

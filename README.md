@@ -22,7 +22,7 @@ Needs Node 22, pnpm 10 and Docker (or any Postgres 16 with `pg_trgm`).
 ```sh
 pnpm install
 cp .env.example .env              # then set SUPPRESSION_SECRET: openssl rand -hex 32
-pnpm db:up                        # Postgres in Docker on 127.0.0.1:5432
+pnpm db:up                        # Postgres in Docker on 127.0.0.1:${POSTGRES_PORT} (default 5432)
 pnpm db:migrate
 pnpm db:seed                      # optional: 20 fake leads (.test domains, no phone numbers)
 pnpm dev                          # http://127.0.0.1:8787
@@ -35,12 +35,18 @@ To run the Workers build locally, copy `apps/server/.dev.vars.example` to `apps/
 ## Tests
 
 ```sh
-createdb prospector_test   # or: docker compose exec postgres createdb -U postgres prospector_test
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/prospector_test pnpm db:migrate
-DATABASE_URL_TEST=postgres://postgres:postgres@localhost:5432/prospector_test pnpm test
+docker compose exec postgres createdb -U postgres prospector_test   # once (or use your own createdb)
+pnpm db:migrate:test       # migrates DATABASE_URL_TEST
+pnpm test                  # reads DATABASE_URL_TEST from .env
 pnpm test:unit             # pure logic only, no database
 pnpm lint && pnpm typecheck
 ```
+
+`.env.example` already has `DATABASE_URL_TEST`; no inline env vars are needed, so the same commands work in PowerShell, cmd and bash.
+
+**Port 5432 already in use** (for example by another Postgres, such as n8n's)? Set `POSTGRES_PORT=5433` in `.env` and use the same port in `DATABASE_URL` and `DATABASE_URL_TEST`, then run `pnpm db:up` again. A "password authentication failed for user postgres" error usually means the URL is reaching a different Postgres than the one from `docker-compose.yml`.
+
+**Windows:** the repo keeps LF line endings (`.gitattributes`), because Biome rejects CRLF. If `pnpm lint` flags every file after cloning, run `git config core.autocrlf false`, then `git rm --cached -r . -q && git reset --hard` (or re-clone).
 
 The database tests truncate every table, so point `DATABASE_URL_TEST` at a disposable database. CI runs lint, typecheck, migrations, all tests and `pnpm audit` against a Postgres service.
 
