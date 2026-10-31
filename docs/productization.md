@@ -19,6 +19,16 @@ Decision: [ADR-0002](decisions/0002-single-tenant-per-client.md). Each client ge
 - A short case-study page on webcraftz.com.br that embeds the demo: problem, approach (rules first, LLM second; human in the loop; LGPD), screenshots and metrics. Use real aggregate numbers only if Diego chooses to publish them.
 - The repo stays private. The demo shows the product, not the code.
 
+## Path to SaaS (one product, in stages)
+
+The Prospector itself is the SaaS candidate. A separate product would split a solo developer's time before either one has proof.
+
+1. **Own use and portfolio (M1–M6).** It prospects for Webcraftz. Real results (replies, calls, contracts) become the case study, and the public demo shows the product.
+2. **Managed instances (1–3 pilots).** Offer setup plus a monthly fee to businesses that sell services to SMBs, starting with agencies and freelancers like Webcraftz. Each pilot gets its own instance ([ADR-0002](decisions/0002-single-tenant-per-client.md)). This tests willingness to pay with no billing or signup code.
+3. **Self-serve SaaS** only if the pilots renew and there are about 10 paying instances. Then revisit ADR-0002 (multi-tenant, billing, onboarding).
+
+Don't start a second product until stage 2 shows whether this one sells.
+
 ## Selling it to clients (later, when a client signs)
 
 What changes then:
