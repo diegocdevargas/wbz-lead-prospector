@@ -40,6 +40,6 @@ jobs:
       - run: pnpm typecheck
       - name: Migration files are consistent
         run: pnpm --filter @wbz/db exec drizzle-kit check
-      - run: DATABASE_URL=$DATABASE_URL_TEST pnpm db:migrate
+      - run: pnpm db:migrate:test
       - run: pnpm test
       - run: pnpm audit --prod --audit-level high
