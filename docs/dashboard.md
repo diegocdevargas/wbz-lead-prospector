@@ -42,6 +42,8 @@ Stack decision: [ADR-0001](decisions/0001-server-rendered-dashboard.md) (server-
 | Lead page: Follow-ups | Sequence state, next send date, stop reason | M5 |
 | **Metrics** | Reply rate by niche, channel and variant; cost per qualified lead; calls per week; funnel by stage | M5 |
 | **Public demo** | Read-only, fake data, separate deployment ([ADR-0003](decisions/0003-demo-separate-deployment.md)) | M5 |
+| **Assistant** | Chat panel that answers from the data and proposes actions you confirm. Steps in [assistant.md](assistant.md) | M3 → M5 |
+| **Gamification** | Placeholder, see below | M6 |
 
 ## Navigation
 
@@ -50,11 +52,21 @@ Today
 Prospecting:  Campaigns · Leads · Import · Duplicates
 Outreach:     Approval queue · Outbox
 Inbound:      Conversations · Calls
-Insights:     Metrics · Usage and costs
+Insights:     Metrics · Usage and costs · Assistant
 System:       Jobs · Opt-outs · Settings
 ```
 
 Sections appear when their milestone ships. There are no placeholder links.
+
+## Gamification (placeholder)
+
+Diego will send the details later. The idea: the operator levels up by using the platform. It is planned as **M6**, after Metrics, because it needs action history and outcome data to score anything.
+
+What earlier milestones already provide, so M6 is mostly UI and rules:
+- The append-only **audit log** (M3) and `stage_events` record every action with its actor and time. Points are computed from these events, never stored as a separate truth.
+- Point rules go in config, like the scoring rules, so they can change without a migration.
+
+Guardrail for when we design it: reward outcomes and good habits (reviewing a draft carefully, replies, calls booked, opt-outs honored), never raw volume of sends. Volume rewards would push against the 20/day email cap and the human-in-the-loop rule.
 
 ## Definition of done for a screen
 

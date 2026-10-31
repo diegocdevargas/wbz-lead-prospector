@@ -31,6 +31,7 @@ The system holds business contact data (LGPD), API keys that cost money, and a W
 | **Dependencies** | Dependabot, `pnpm audit` in CI, lockfile frozen. New dependency only with a stated reason | M1 ✅ |
 | **CI and repo** | Least-privilege workflow permissions (`contents: read`). Branch protection on `main` (PR plus green CI). GitHub secret scanning and push protection on. Actions pinned to a major version | Turn on in GitHub settings now |
 | **Data lifecycle** | LGPD export and delete per lead. Suppressions as HMAC. Raw API responses and audit HTML kept 90 days, then pruned by a cron job. Neon point-in-time restore on (7 days) | M1 ✅, pruning in M2 |
+| **Dashboard assistant** | Read-only tools; writes are proposals the operator confirms; never sends outbound. See [assistant.md](assistant.md) | M3–M5 |
 | **Demo mode** | Separate deployment, separate database, seeded fake data, no outbound credentials at all. See [ADR-0003](decisions/0003-demo-separate-deployment.md) | M5 |
 
 ## Before each milestone merges
@@ -46,3 +47,15 @@ The system holds business contact data (LGPD), API keys that cost money, and a W
 2. Rotate the affected key in the provider console, then `wrangler secret put`.
 3. Check the audit log and provider usage for what was used.
 4. If lead data was exposed, LGPD requires notifying the ANPD and the affected people within a reasonable time (ANPD guidance: 3 business days). Write down what happened.
+
+## Sources
+
+- LGPD (Lei 13.709/2018): https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm
+- ANPD incident notification rule, Resolução CD/ANPD nº 15/2024 (3 business days): https://www.legisweb.com.br/legislacao/?id=458235
+- OWASP SSRF Prevention Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html
+- OWASP CSRF Prevention Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html
+- OWASP Top 10 for LLM Applications: https://genai.owasp.org/llm-top-10/
+- Meta webhooks and `X-Hub-Signature-256`: https://developers.facebook.com/docs/graph-api/webhooks/getting-started
+- WhatsApp Cloud API pricing and customer service window: https://developers.facebook.com/docs/whatsapp/pricing
+- Cloudflare Access JWT validation: https://developers.cloudflare.com/cloudflare-one/identity/authorization-cookie/validating-json/
+- Google API key restrictions: https://cloud.google.com/docs/authentication/api-keys

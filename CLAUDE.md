@@ -87,6 +87,8 @@ Daily digest at 8:00 America/Sao_Paulo: new A-tier leads, drafts awaiting approv
 - Metrics: reply rate by niche/channel/message variant, cost per qualified lead, calls booked per week.
 - **Public demo mode:** a sanitized, read-only view with fake data that I can embed in my portfolio to show prospective clients how the system works. It must never show real lead data, so it runs as a separate deployment with its own fake database (ADR-0003).
 - Also: Today (home, same data as the digest), Outbox, Conversations inbox with bot take-over, Calls, Usage and costs, Jobs, read-only Settings.
+- **Assistant:** a chat panel for me that answers from the data and proposes actions I confirm. Read-only tools, never sends outbound. Built in steps M3 → M5: `docs/assistant.md`.
+- **Gamification** (M6, details from me later): points derived from the audit log and `stage_events`, rewarding outcomes, not send volume.
 - Built server-rendered in the Hono app (ADR-0001). **Each milestone ships the screens for its own module**; the full screen list, milestone per screen and UI rules are in `docs/dashboard.md`.
 
 **8. Cost and safety guards**
@@ -101,9 +103,10 @@ Daily digest at 8:00 America/Sao_Paulo: new A-tier leads, drafts awaiting approv
 2. Build in milestones, each runnable and tested:
    - M1 ✅: schema, manual import, dedupe, dashboard lead list
    - M2: Google Places discovery + website audit + findings. Dashboard: app shell v2, Campaigns, Audit tab, Jobs, Settings
-   - M3: scoring + approval queue + email drafting/sending with opt-out. Dashboard: Approval queue, Outbox, Usage and costs, Today
-   - M4: WhatsApp webhook + qualifier agent + calendar booking. Dashboard: Conversations, Calls, notification settings
-   - M5: Instagram Business Discovery, CNPJ import, follow-ups, digest, metrics, demo mode. Dashboard: Metrics, public demo
+   - M3: scoring + approval queue + email drafting/sending with opt-out. Dashboard: Approval queue, Outbox, Usage and costs, Today, Assistant (read-only)
+   - M4: WhatsApp webhook + qualifier agent + calendar booking. Dashboard: Conversations, Calls, notification settings, Assistant proposals and streaming
+   - M5: Instagram Business Discovery, CNPJ import, follow-ups, digest, metrics, demo mode. Dashboard: Metrics, public demo, Assistant insights
+   - M6: gamification (details pending)
 3. After each milestone: what works, how to run it, what's next, and any decision I need to make.
 4. Prefer boring, well-documented libraries. Don't add dependencies without saying why.
 5. **Workflow:** one branch and PR per milestone (or smaller), from the latest `main`. CI green (lint, typecheck, migrations check, tests, audit) and my review before merge. Run the `security-review` skill on the diff before asking for review. Conventional, descriptive commit messages.
@@ -117,7 +120,7 @@ One place per kind of fact. When two disagree, the one listed here wins and the 
 | --- | --- |
 | What to build, rules, milestones | This file (`CLAUDE.md`) |
 | Why a choice was made | `docs/decisions/` |
-| Dashboard, security, productization plans | `docs/dashboard.md`, `docs/security.md`, `docs/productization.md` |
+| Dashboard, assistant, security, productization plans | `docs/dashboard.md`, `docs/assistant.md`, `docs/security.md`, `docs/productization.md` |
 | How to run, deploy, env vars | `README.md` |
 | Data model | `packages/db/src/schema.ts`; migrations are generated from it, never hand-edited after merge |
 | Enums (stages, sources) | `packages/core/src/stages.ts`, which the DB enums import |
