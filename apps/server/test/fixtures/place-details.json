@@ -1,0 +1,32 @@
+{
+  "id": "ChIJtest0001",
+  "reviews": [
+    {
+      "text": {
+        "text": "Ótimo atendimento, mas demoram para responder no WhatsApp."
+      },
+      "rating": 4,
+      "publishTime": "2026-09-01T00:00:00Z",
+      "authorAttribution": {
+        "displayName": "Nome Que Nao Pode Ser Guardado"
+      }
+    },
+    {
+      "text": {
+        "text": "Muito difícil agendar, ninguém atende o telefone."
+      },
+      "rating": 2,
+      "publishTime": "2026-08-01T00:00:00Z",
+      "authorAttribution": {
+        "displayName": "Outra Pessoa"
+      }
+    },
+    {
+      "text": {
+        "text": "Excelente!"
+      },
+      "rating": 5,
+      "publishTime": "2026-07-01T00:00:00Z"
+    }
+  ]
+}

@@ -4,7 +4,7 @@ compatibility_date = "2026-10-01"
 compatibility_flags = ["nodejs_compat"]
 
 # Non-secret settings. Secrets go in with `wrangler secret put`:
-#   DATABASE_URL, SUPPRESSION_SECRET, CF_ACCESS_AUD (and BASIC_AUTH_* if used)
+#   DATABASE_URL, SUPPRESSION_SECRET, CF_ACCESS_AUD, GOOGLE_API_KEY (and BASIC_AUTH_* if used)
 [vars]
 ENVIRONMENT = "production"
 AUTH_MODE = "access"
@@ -14,3 +14,20 @@ CF_ACCESS_TEAM_DOMAIN = "CHANGE-ME.cloudflareaccess.com"
 # [[hyperdrive]]
 # binding = "HYPERDRIVE"
 # id = "<hyperdrive id>"
+
+# Background jobs. The queue carries job ids only; state lives in the jobs table.
+# Create once: wrangler queues create wbz-jobs
+[[queues.producers]]
+binding = "JOBS"
+queue = "wbz-jobs"
+
+[[queues.consumers]]
+queue = "wbz-jobs"
+max_batch_size = 5
+max_batch_timeout = 5
+# runJob handles retries itself and always acks.
+max_retries = 0
+
+# Every minute: re-send due jobs and recover stuck ones. 06:00 UTC (03:00 São Paulo): data retention.
+[triggers]
+crons = ["* * * * *", "0 6 * * *"]

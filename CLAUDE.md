@@ -102,7 +102,7 @@ Daily digest at 8:00 America/Sao_Paulo: new A-tier leads, drafts awaiting approv
 1. Before writing code, give me a short plan: folder structure, DB schema (tables + key columns), and the order of milestones. Ask about anything ambiguous. **Wait for my OK.**
 2. Build in milestones, each runnable and tested:
    - M1 ✅: schema, manual import, dedupe, dashboard lead list
-   - M2: Google Places discovery + website audit + findings. Dashboard: app shell v2, Campaigns, Audit tab, Jobs, Settings
+   - M2 ✅: Google Places discovery + website audit + findings. Dashboard: app shell v2, Campaigns, Audit tab, Jobs, Settings
    - M3: scoring + approval queue + email drafting/sending with opt-out. Dashboard: Approval queue, Outbox, Usage and costs, Today, Assistant (read-only)
    - M4: WhatsApp webhook + qualifier agent + calendar booking. Dashboard: Conversations, Calls, notification settings, Assistant proposals and streaming
    - M5: Instagram Business Discovery, CNPJ import, follow-ups, digest, metrics, demo mode. Dashboard: Metrics, public demo, Assistant insights
@@ -110,7 +110,7 @@ Daily digest at 8:00 America/Sao_Paulo: new A-tier leads, drafts awaiting approv
 3. After each milestone: what works, how to run it, what's next, and any decision I need to make.
 4. Prefer boring, well-documented libraries. Don't add dependencies without saying why.
 5. **Workflow:** one branch and PR per milestone (or smaller), from the latest `main`. CI green (lint, typecheck, migrations check, tests, audit) and my review before merge. Run the `security-review` skill on the diff before asking for review. Conventional, descriptive commit messages.
-6. **Decisions** that change the stack, data model or a rule go in `docs/decisions/NNNN-title.md` (short ADR: context, options, decision, consequences) and are linked from here.
+6. **Decisions** that change the stack, data model or a rule go in `docs/decisions/NNNN-title.md` (short ADR: context, options, decision, consequences) and are linked from here. M2: [0004 Google Places retention](docs/decisions/0004-google-places-retention.md), [0005 jobs table](docs/decisions/0005-jobs-table.md).
 7. **Keep it reusable** (it may become a portfolio piece and a product for other clients): no Webcraftz-specific values in code, offer and brand injected into prompts from config, scoring rules as data. One isolated instance per client, never multi-tenant (ADR-0002). Details and what is deliberately left out: `docs/productization.md`.
 
 ### Source of truth

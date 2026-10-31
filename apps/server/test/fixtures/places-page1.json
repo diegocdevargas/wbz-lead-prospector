@@ -1,0 +1,110 @@
+{
+  "places": [
+    {
+      "id": "ChIJtest0001",
+      "displayName": {
+        "text": "Clínica Sorriso Teste",
+        "languageCode": "pt"
+      },
+      "formattedAddress": "Rua Teste, 1 - Centro, Chapecó - SC, 89800-000, Brasil",
+      "addressComponents": [
+        {
+          "longText": "Chapecó",
+          "shortText": "Chapecó",
+          "types": ["administrative_area_level_2", "political"]
+        },
+        {
+          "longText": "Santa Catarina",
+          "shortText": "SC",
+          "types": ["administrative_area_level_1", "political"]
+        }
+      ],
+      "rating": 4.6,
+      "userRatingCount": 87,
+      "googleMapsUri": "https://maps.google.com/?cid=1",
+      "businessStatus": "OPERATIONAL",
+      "primaryType": "dentist",
+      "websiteUri": "https://sorriso.test/",
+      "nationalPhoneNumber": "(49) 3322-0001"
+    },
+    {
+      "id": "ChIJtest0002",
+      "displayName": {
+        "text": "Odonto Sem Site Teste",
+        "languageCode": "pt"
+      },
+      "formattedAddress": "Rua Teste, 2 - Centro, Chapecó - SC, 89800-000, Brasil",
+      "addressComponents": [
+        {
+          "longText": "Chapecó",
+          "shortText": "Chapecó",
+          "types": ["administrative_area_level_2", "political"]
+        },
+        {
+          "longText": "Santa Catarina",
+          "shortText": "SC",
+          "types": ["administrative_area_level_1", "political"]
+        }
+      ],
+      "rating": 4.6,
+      "userRatingCount": 87,
+      "googleMapsUri": "https://maps.google.com/?cid=2",
+      "businessStatus": "OPERATIONAL",
+      "primaryType": "dentist",
+      "nationalPhoneNumber": "(49) 3322-0002"
+    },
+    {
+      "id": "ChIJtest0003",
+      "displayName": {
+        "text": "Dental Shopify Teste",
+        "languageCode": "pt"
+      },
+      "formattedAddress": "Rua Teste, 3 - Centro, Chapecó - SC, 89800-000, Brasil",
+      "addressComponents": [
+        {
+          "longText": "Chapecó",
+          "shortText": "Chapecó",
+          "types": ["administrative_area_level_2", "political"]
+        },
+        {
+          "longText": "Santa Catarina",
+          "shortText": "SC",
+          "types": ["administrative_area_level_1", "political"]
+        }
+      ],
+      "rating": 4.6,
+      "userRatingCount": 87,
+      "googleMapsUri": "https://maps.google.com/?cid=3",
+      "businessStatus": "OPERATIONAL",
+      "primaryType": "dentist",
+      "websiteUri": "https://loja-dental.test/",
+      "nationalPhoneNumber": "(49) 3322-0003"
+    },
+    {
+      "id": "ChIJtest0004",
+      "displayName": {
+        "text": "Clínica Fechada Teste",
+        "languageCode": "pt"
+      },
+      "formattedAddress": "Rua Teste, 4 - Centro, Chapecó - SC, 89800-000, Brasil",
+      "addressComponents": [
+        {
+          "longText": "Chapecó",
+          "shortText": "Chapecó",
+          "types": ["administrative_area_level_2", "political"]
+        },
+        {
+          "longText": "Santa Catarina",
+          "shortText": "SC",
+          "types": ["administrative_area_level_1", "political"]
+        }
+      ],
+      "rating": 4.6,
+      "userRatingCount": 87,
+      "googleMapsUri": "https://maps.google.com/?cid=4",
+      "businessStatus": "CLOSED_PERMANENTLY",
+      "primaryType": "dentist"
+    }
+  ],
+  "nextPageToken": "page-2-token"
+}

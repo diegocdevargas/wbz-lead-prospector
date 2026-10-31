@@ -127,7 +127,7 @@ describe("dashboard flows", () => {
     await post("/leads/new", new URLSearchParams({ company: "A", niche: "odontologia" }));
     await post("/leads/new", new URLSearchParams({ company: "B", niche: "advocacia" }));
     const html = await (await app.request(`${ORIGIN}/leads?niche=advocacia&stage=bogus`, { headers: auth })).text();
-    expect(html).toContain("Leads (1)");
+    expect(html).toContain('<span class="muted"> (1)</span>');
   });
 
   it("merges from the review queue", async () => {

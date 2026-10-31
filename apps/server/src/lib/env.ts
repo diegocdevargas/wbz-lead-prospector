@@ -14,6 +14,8 @@ const envSchema = z
     CF_ACCESS_TEAM_DOMAIN: z.string().optional(),
     CF_ACCESS_AUD: z.string().optional(),
     APP_CONFIG: z.string().optional(),
+    /** One key restricted to Places API (New) + PageSpeed Insights. Without it, discovery and PageSpeed are off. */
+    GOOGLE_API_KEY: z.string().min(20, "GOOGLE_API_KEY looks too short").optional(),
   })
   .superRefine((env, ctx) => {
     if (env.AUTH_MODE === "none" && env.ENVIRONMENT === "production") {

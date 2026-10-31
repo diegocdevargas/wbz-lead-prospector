@@ -1,6 +1,16 @@
-import { applyMapping, autoMapHeaders, LEAD_FIELDS, LEAD_SOURCES, STAGES, SUPPRESSION_KINDS } from "@wbz/core";
-import { companies, type Db, importRows, imports } from "@wbz/db";
-import { asc, desc, eq, sql } from "drizzle-orm";
+import {
+  applyMapping,
+  autoMapHeaders,
+  CREATING_SOURCES,
+  JOB_KINDS,
+  JOB_STATUSES,
+  LEAD_FIELDS,
+  PLATFORMS,
+  STAGES,
+  SUPPRESSION_KINDS,
+} from "@wbz/core";
+import { campaigns, companies, type Db, importRows, imports, jobs } from "@wbz/db";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { csrf } from "hono/csrf";
@@ -11,7 +21,11 @@ import { authMiddleware } from "./lib/auth.ts";
 import { parseTable } from "./lib/csv.ts";
 import type { Settings } from "./lib/env.ts";
 import { logError, requestLog } from "./lib/log.ts";
+import type { FetchLike, Resolver } from "./lib/safe-fetch.ts";
+import { latestAudit } from "./services/audit.ts";
+import { createCampaign, getCampaign, listCampaigns, startCampaign, updateCampaignCap } from "./services/discovery.ts";
 import { ImportTooLargeError, runImport } from "./services/import.ts";
+import { enqueue, listJobs, retryJob } from "./services/jobs.ts";
 import {
   addSuppression,
   changeStage,
@@ -24,26 +38,44 @@ import {
   listLeads,
   listSuppressions,
   mergeCandidate,
-  PAGE_SIZE,
 } from "./services/leads.ts";
+import { type JobQueue, placesLimiter, type Runtime } from "./services/runtime.ts";
+import { CampaignPage, CampaignsPage, NewCampaignPage } from "./views/campaigns.tsx";
 import { DedupePage } from "./views/dedupe.tsx";
 import { ImportDetailPage, ImportsPage, PreviewPage } from "./views/imports.tsx";
+import { JobsPage } from "./views/jobs.tsx";
 import { Layout } from "./views/layout.tsx";
 import { LeadList, LeadPage, NewLeadPage } from "./views/leads.tsx";
+import { APP_JS } from "./views/script.ts";
+import { SettingsPage } from "./views/settings.tsx";
 import { CSS } from "./views/styles.ts";
 import { SuppressionsPage } from "./views/suppressions.tsx";
+import { decodeCursor, encodeCursor } from "./views/ui.tsx";
 
-export type AppEnv = { Variables: { db: Db; settings: Settings } };
+export type AppEnv = { Variables: { db: Db; settings: Settings; rt: Runtime } };
 
 /**
  * Per-request dependencies. Node reuses one pool; Workers open a Neon pool
  * per request and close it after the response.
  */
-export type ResolveDeps = (c: { executionCtx?: unknown }) => Promise<{
+export type ResolveDeps = (c: { executionCtx?: unknown; env?: unknown }) => Promise<{
   db: Db;
   settings: Settings;
   release?: () => Promise<void>;
+  queue?: JobQueue;
 }>;
+
+/** Network access for jobs started from the dashboard; tests pass fixtures. */
+export interface AppIo {
+  http: FetchLike;
+  resolve: Resolver;
+}
+
+const NO_QUEUE: JobQueue = {
+  async send() {
+    // Without a queue the cron sweep picks the job up from the table.
+  },
+};
 
 const uuid = z.uuid();
 const KB = 1024;
@@ -53,7 +85,11 @@ function idParam(value: string): string {
   return value;
 }
 
-export function createApp(settings: Settings, resolve: ResolveDeps) {
+export function createApp(
+  settings: Settings,
+  resolve: ResolveDeps,
+  io: AppIo = { http: fetch, resolve: async () => [] },
+) {
   const app = new Hono<AppEnv>();
   const { env, config } = settings;
 
@@ -63,6 +99,8 @@ export function createApp(settings: Settings, resolve: ResolveDeps) {
       contentSecurityPolicy: {
         defaultSrc: ["'none'"],
         styleSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        connectSrc: ["'none'"],
         imgSrc: ["'self'"],
         formAction: ["'self'"],
         frameAncestors: ["'none'"],
@@ -102,6 +140,15 @@ export function createApp(settings: Settings, resolve: ResolveDeps) {
     const deps = await resolve(c);
     c.set("db", deps.db);
     c.set("settings", settings);
+    c.set("rt", {
+      db: deps.db,
+      settings,
+      queue: deps.queue ?? NO_QUEUE,
+      http: io.http,
+      resolve: io.resolve,
+      now: () => new Date(),
+      placesLimiter: placesLimiter(config.places.ratePerSecond),
+    });
     try {
       await next();
     } finally {
@@ -114,6 +161,11 @@ export function createApp(settings: Settings, resolve: ResolveDeps) {
     return c.body(CSS, 200, { "Content-Type": "text/css; charset=utf-8" });
   });
 
+  app.get("/assets/app.js", (c) => {
+    c.header("Cache-Control", "public, max-age=3600");
+    return c.body(APP_JS, 200, { "Content-Type": "text/javascript; charset=utf-8" });
+  });
+
   app.get("/", (c) => c.redirect("/leads"));
 
   // ---- Leads ---------------------------------------------------------------
@@ -123,28 +175,39 @@ export function createApp(settings: Settings, resolve: ResolveDeps) {
     stage: z.enum(STAGES).optional().catch(undefined),
     niche: z.string().max(120).optional().catch(undefined),
     city: z.string().max(120).optional().catch(undefined),
-    source: z.enum(LEAD_SOURCES).optional().catch(undefined),
-    page: z.coerce.number().int().min(1).max(10_000).optional().catch(undefined),
+    source: z.enum(CREATING_SOURCES).optional().catch(undefined),
+    platform: z
+      .enum([...PLATFORMS, "none"])
+      .optional()
+      .catch(undefined),
+    website: z.enum(["yes", "no"]).optional().catch(undefined),
+    campaign: z.uuid().optional().catch(undefined),
+    after: z.string().max(80).optional().catch(undefined),
   });
 
   app.get("/leads", async (c) => {
-    const raw = Object.fromEntries(Object.entries(c.req.query()).filter(([, v]) => v !== ""));
-    const f = listQuery.parse(raw);
+    const f = listQuery.parse(nonEmpty(c.req.query()));
     const db = c.var.db;
-    const [result, options] = await Promise.all([listLeads(db, f), filterOptions(db)]);
-    const filters = Object.fromEntries(
-      Object.entries({ q: f.q, stage: f.stage, niche: f.niche, city: f.city, source: f.source }).filter(
-        (e): e is [string, string] => Boolean(e[1]),
-      ),
-    );
+    const cursor = decodeCursor(f.after);
+    const [result, options, campaignOptions] = await Promise.all([
+      listLeads(db, { ...f, cursor }),
+      filterOptions(db),
+      db
+        .select({ id: campaigns.id, name: campaigns.name })
+        .from(campaigns)
+        .orderBy(desc(campaigns.createdAt))
+        .limit(100),
+    ]);
+    const { after: _after, ...rest } = f;
+    const last = result.rows.at(-1);
     return c.html(
       <LeadList
         rows={result.rows}
         total={result.total}
-        page={result.page}
-        pageSize={PAGE_SIZE}
-        filters={filters}
-        options={{ ...options, sources: LEAD_SOURCES }}
+        next={result.hasMore && last ? encodeCursor(last.createdAt, last.id) : null}
+        isFirst={!cursor}
+        filters={definedOnly(rest)}
+        options={{ ...options, sources: CREATING_SOURCES, campaigns: campaignOptions }}
       />,
     );
   });
@@ -176,8 +239,11 @@ export function createApp(settings: Settings, resolve: ResolveDeps) {
   });
 
   app.get("/leads/:id", async (c) => {
-    const lead = await getLead(c.var.db, idParam(c.req.param("id")));
+    const id = idParam(c.req.param("id"));
+    const lead = await getLead(c.var.db, id);
     if (!lead) return c.notFound();
+    const tab = c.req.query("tab") === "audit" ? "audit" : "overview";
+    const [audit, pendingAudit] = await Promise.all([latestAudit(c.var.db, id), auditPending(c.var.db, id)]);
     const added = c.req.query("added");
     const flash =
       added === "merged"
@@ -186,8 +252,30 @@ export function createApp(settings: Settings, resolve: ResolveDeps) {
           ? { kind: "ok" as const, text: "Added, and flagged as a possible duplicate for review." }
           : added === "created"
             ? { kind: "ok" as const, text: "Lead added." }
-            : null;
-    return c.html(<LeadPage {...lead} flash={flash} />);
+            : added === "audit"
+              ? { kind: "ok" as const, text: "Audit queued. Refresh in a minute to see the findings." }
+              : null;
+    return c.html(<LeadPage {...lead} flash={flash} tab={tab} audit={audit} auditPending={pendingAudit} />);
+  });
+
+  app.post("/leads/:id/audit", async (c) => {
+    const id = idParam(c.req.param("id"));
+    const [company] = await c.var.db
+      .select({ id: companies.id, stage: companies.stage })
+      .from(companies)
+      .where(eq(companies.id, id));
+    if (!company) return c.notFound();
+    if (company.stage === "opted_out")
+      throw new HTTPException(409, { message: "This lead opted out; it is not audited." });
+    if (!(await auditPending(c.var.db, id))) {
+      await enqueue(c.var.db, c.var.rt.queue, {
+        kind: "audit_lead",
+        key: `audit:${id}:${Date.now()}`,
+        payload: { companyId: id },
+        maxAttempts: config.jobs.maxAttempts,
+      });
+    }
+    return c.redirect(`/leads/${id}?tab=audit&added=audit`, 303);
   });
 
   const stageForm = z.object({
@@ -383,6 +471,154 @@ export function createApp(settings: Settings, resolve: ResolveDeps) {
     return c.html(<SuppressionsPage rows={await listSuppressions(db)} flash={flash} />, result.ok ? 200 : 422);
   });
 
+  // ---- Campaigns -----------------------------------------------------------
+
+  const discoveryEnabled = Boolean(env.GOOGLE_API_KEY);
+
+  app.get("/campaigns", async (c) => {
+    const done = c.req.query("done");
+    const flash = done === "created" ? { kind: "ok" as const, text: "Campaign created." } : null;
+    return c.html(
+      <CampaignsPage rows={await listCampaigns(c.var.db)} discoveryEnabled={discoveryEnabled} flash={flash} />,
+    );
+  });
+
+  const campaignPage = (values: Record<string, string> = {}, error: string | null = null) => (
+    <NewCampaignPage
+      values={values}
+      error={error}
+      defaultCap={config.places.defaultRequestCap}
+      maxPages={config.places.maxPagesPerQuery}
+    />
+  );
+
+  app.get("/campaigns/new", (c) => c.html(campaignPage()));
+
+  const campaignForm = z.object({
+    name: z.string().trim().min(1).max(120),
+    niche: z.string().trim().min(2).max(120),
+    queryTemplate: z
+      .string()
+      .trim()
+      .max(200)
+      .optional()
+      .transform((v) => v || "{niche} em {city}")
+      .refine((v) => v.includes("{city}"), "the query template must contain {city}"),
+    cities: z
+      .string()
+      .max(4000)
+      .transform((v) => [
+        ...new Set(
+          v
+            .split(/\r?\n|;/)
+            .map((x) => x.trim())
+            .filter(Boolean),
+        ),
+      ])
+      .pipe(z.array(z.string().max(120)).min(1, "add at least one city").max(100)),
+    placesRequestCap: z.coerce.number().int().min(1).max(5000),
+  });
+
+  app.post("/campaigns", async (c) => {
+    const form = await c.req.parseBody();
+    const values = Object.fromEntries(
+      Object.entries(form).filter((e): e is [string, string] => typeof e[1] === "string"),
+    );
+    const parsed = campaignForm.safeParse(values);
+    if (!parsed.success) {
+      const msg = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+      return c.html(campaignPage(values, msg), 422);
+    }
+    const id = await createCampaign(c.var.db, parsed.data);
+    return c.redirect(`/campaigns/${id}?done=created`, 303);
+  });
+
+  app.get("/campaigns/:id", async (c) => {
+    const data = await getCampaign(c.var.db, idParam(c.req.param("id")));
+    if (!data) return c.notFound();
+    const done = c.req.query("done");
+    const flash =
+      done === "started"
+        ? { kind: "ok" as const, text: "Discovery queued. Results appear as each city finishes; refresh to update." }
+        : done === "created"
+          ? { kind: "ok" as const, text: "Campaign created. Check the setup, then run discovery." }
+          : done === "cap"
+            ? { kind: "ok" as const, text: "Cap updated." }
+            : null;
+    return c.html(<CampaignPage {...data} discoveryEnabled={discoveryEnabled} flash={flash} />);
+  });
+
+  app.post("/campaigns/:id/run", async (c) => {
+    const id = idParam(c.req.param("id"));
+    if (!discoveryEnabled) throw new HTTPException(409, { message: "Set GOOGLE_API_KEY to run discovery." });
+    if (!(await startCampaign(c.var.rt, id))) return c.notFound();
+    return c.redirect(`/campaigns/${id}?done=started`, 303);
+  });
+
+  app.post("/campaigns/:id/cap", async (c) => {
+    const id = idParam(c.req.param("id"));
+    const parsed = z
+      .object({ placesRequestCap: z.coerce.number().int().min(1).max(5000) })
+      .safeParse(await c.req.parseBody());
+    if (!parsed.success) throw new HTTPException(400, { message: "Invalid cap" });
+    if (!(await updateCampaignCap(c.var.rt, id, parsed.data.placesRequestCap))) {
+      throw new HTTPException(400, { message: "The cap cannot be lower than the requests already used." });
+    }
+    return c.redirect(`/campaigns/${id}?done=cap`, 303);
+  });
+
+  // ---- Jobs ----------------------------------------------------------------
+
+  const jobsQuery = z.object({
+    status: z.enum(JOB_STATUSES).optional().catch(undefined),
+    kind: z.enum(JOB_KINDS).optional().catch(undefined),
+    after: z.string().max(80).optional().catch(undefined),
+  });
+
+  app.get("/jobs", async (c) => {
+    const f = jobsQuery.parse(nonEmpty(c.req.query()));
+    const cursor = decodeCursor(f.after);
+    const result = await listJobs(c.var.db, { status: f.status, kind: f.kind, cursor });
+    const last = result.rows.at(-1);
+    const flash =
+      c.req.query("done") === "retried" ? { kind: "ok" as const, text: "Job queued for another attempt." } : null;
+    return c.html(
+      <JobsPage
+        rows={result.rows}
+        counts={result.counts}
+        filters={definedOnly({ status: f.status, kind: f.kind })}
+        next={result.hasMore && last ? encodeCursor(last.createdAt, last.id) : null}
+        isFirst={!cursor}
+        flash={flash}
+      />,
+    );
+  });
+
+  app.post("/jobs/:id/retry", async (c) => {
+    const ok = await retryJob(c.var.db, c.var.rt.queue, idParam(c.req.param("id")));
+    if (!ok) return c.notFound();
+    return c.redirect("/jobs?done=retried", 303);
+  });
+
+  // ---- Settings (read-only) -------------------------------------------------
+
+  app.get("/settings", (c) =>
+    c.html(
+      <SettingsPage
+        config={config}
+        environment={env.ENVIRONMENT}
+        authMode={env.AUTH_MODE}
+        secrets={[
+          ["DATABASE_URL", Boolean(env.DATABASE_URL), "Postgres connection"],
+          ["SUPPRESSION_SECRET", Boolean(env.SUPPRESSION_SECRET), "Keys opt-out hashes. Never rotate."],
+          ["GOOGLE_API_KEY", Boolean(env.GOOGLE_API_KEY), "Places API (New) + PageSpeed Insights"],
+          ["CF_ACCESS_AUD", Boolean(env.CF_ACCESS_AUD), "Cloudflare Access audience (production auth)"],
+          ["BASIC_AUTH_PASSWORD", Boolean(env.BASIC_AUTH_PASSWORD), "Only for AUTH_MODE=basic"],
+        ]}
+      />,
+    ),
+  );
+
   // ---- Errors --------------------------------------------------------------
 
   app.notFound((c) =>
@@ -410,6 +646,29 @@ export function createApp(settings: Settings, resolve: ResolveDeps) {
 }
 
 class UserError extends Error {}
+
+function nonEmpty(q: Record<string, string>) {
+  return Object.fromEntries(Object.entries(q).filter(([, v]) => v !== ""));
+}
+
+function definedOnly(o: Record<string, string | undefined>): Record<string, string> {
+  return Object.fromEntries(Object.entries(o).filter((e): e is [string, string] => Boolean(e[1])));
+}
+
+async function auditPending(db: Db, companyId: string) {
+  const [row] = await db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.kind, "audit_lead"),
+        inArray(jobs.status, ["pending", "running", "failed"]),
+        sql`${jobs.payload}->>'companyId' = ${companyId}`,
+      ),
+    )
+    .limit(1);
+  return Boolean(row);
+}
 
 function tooLarge(): never {
   throw new HTTPException(413, { message: "Request body too large" });
