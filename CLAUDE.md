@@ -85,23 +85,49 @@ Daily digest at 8:00 America/Sao_Paulo: new A-tier leads, drafts awaiting approv
 - Lead list with filters (tier, stage, niche, city, platform) and a lead page: audit findings, scores with reasoning, timeline, conversation transcript, drafts.
 - Approval queue (keyboard shortcuts: A approve, E edit, R reject).
 - Metrics: reply rate by niche/channel/message variant, cost per qualified lead, calls booked per week.
-- **Public demo mode:** a sanitized, read-only view with fake data that I can embed in my portfolio to show prospective clients how the system works. It must never show real lead data.
+- **Public demo mode:** a sanitized, read-only view with fake data that I can embed in my portfolio to show prospective clients how the system works. It must never show real lead data, so it runs as a separate deployment with its own fake database (ADR-0003).
+- Also: Today (home, same data as the digest), Outbox, Conversations inbox with bot take-over, Calls, Usage and costs, Jobs, read-only Settings.
+- **Assistant:** a chat panel for me that answers from the data and proposes actions I confirm. Read-only tools, never sends outbound. Built in steps M3 → M5: `docs/assistant.md`.
+- **Gamification** (M6, details from me later): points derived from the audit log and `stage_events`, rewarding outcomes, not send volume.
+- Built server-rendered in the Hono app (ADR-0001). **Each milestone ships the screens for its own module**; the full screen list, milestone per screen and UI rules are in `docs/dashboard.md`.
 
 **8. Cost and safety guards**
 - Per-campaign budget caps for Google Places and Claude API; stop and notify when reached.
 - Log tokens and cost per LLM call.
 - Secrets only in environment variables; never log message bodies at info level; mask phones/emails in logs.
+- Outbound kill switch (`OUTBOUND_ENABLED`), and the suppression check and daily cap are re-checked at send time, not only at draft time.
+- Full security baseline (public routes, webhook signatures, SSRF rules for the audit fetcher, prompt-injection handling, audit log, data retention): `docs/security.md`. It applies to every milestone.
 
 ### How to work
 1. Before writing code, give me a short plan: folder structure, DB schema (tables + key columns), and the order of milestones. Ask about anything ambiguous. **Wait for my OK.**
 2. Build in milestones, each runnable and tested:
-   - M1: schema, manual import, dedupe, dashboard lead list
-   - M2: Google Places discovery + website audit + findings
-   - M3: scoring + approval queue + email drafting/sending with opt-out
-   - M4: WhatsApp webhook + qualifier agent + calendar booking
-   - M5: Instagram Business Discovery, CNPJ import, follow-ups, digest, metrics, demo mode
+   - M1 ✅: schema, manual import, dedupe, dashboard lead list
+   - M2: Google Places discovery + website audit + findings. Dashboard: app shell v2, Campaigns, Audit tab, Jobs, Settings
+   - M3: scoring + approval queue + email drafting/sending with opt-out. Dashboard: Approval queue, Outbox, Usage and costs, Today, Assistant (read-only)
+   - M4: WhatsApp webhook + qualifier agent + calendar booking. Dashboard: Conversations, Calls, notification settings, Assistant proposals and streaming
+   - M5: Instagram Business Discovery, CNPJ import, follow-ups, digest, metrics, demo mode. Dashboard: Metrics, public demo, Assistant insights
+   - M6: gamification (details pending)
 3. After each milestone: what works, how to run it, what's next, and any decision I need to make.
 4. Prefer boring, well-documented libraries. Don't add dependencies without saying why.
+5. **Workflow:** one branch and PR per milestone (or smaller), from the latest `main`. CI green (lint, typecheck, migrations check, tests, audit) and my review before merge. Run the `security-review` skill on the diff before asking for review. Conventional, descriptive commit messages.
+6. **Decisions** that change the stack, data model or a rule go in `docs/decisions/NNNN-title.md` (short ADR: context, options, decision, consequences) and are linked from here.
+7. **Keep it reusable** (it may become a portfolio piece and a product for other clients): no Webcraftz-specific values in code, offer and brand injected into prompts from config, scoring rules as data. One isolated instance per client, never multi-tenant (ADR-0002). Details and what is deliberately left out: `docs/productization.md`.
+
+### Source of truth
+One place per kind of fact. When two disagree, the one listed here wins and the other gets fixed in the same PR.
+
+| Fact | Source of truth |
+| --- | --- |
+| What to build, rules, milestones | This file (`CLAUDE.md`) |
+| Why a choice was made | `docs/decisions/` |
+| Dashboard, assistant, security, productization plans | `docs/dashboard.md`, `docs/assistant.md`, `docs/security.md`, `docs/productization.md` |
+| How to run, deploy, env vars | `README.md` |
+| Data model | `packages/db/src/schema.ts`; migrations are generated from it, never hand-edited after merge |
+| Enums (stages, sources) | `packages/core/src/stages.ts`, which the DB enums import |
+| Tunables (models, weights, thresholds, caps) | `packages/core/src/config.ts`, overridden only by `APP_CONFIG` |
+| LLM prompts | `prompts/` |
+| A lead's current stage | `stage_events` (append-only); `stage` on the lead is a cache of the latest event |
+| Code | `main` on GitHub. Chat, project memory and notes are not a source of truth |
 
 ## Runtime prompts
 The agent and LLM prompts live in `/prompts` (whatsapp-agent.md, outreach-draft.md, scoring.md). Load them from there; don't inline them in code.

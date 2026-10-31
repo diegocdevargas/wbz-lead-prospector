@@ -2,6 +2,8 @@
 
 Lead generation and qualification for Webcraftz. The full spec is in [CLAUDE.md](CLAUDE.md); runtime LLM prompts are in [prompts/](prompts/).
 
+Plans and decisions: [dashboard](docs/dashboard.md), [assistant](docs/assistant.md), [security baseline](docs/security.md), [portfolio and future product](docs/productization.md), [ADRs](docs/decisions/). The "Source of truth" table in CLAUDE.md says which file owns which fact.
+
 **Status: M1** — manual import (CSV, paste, form), dedupe with a review queue, opt-out list, LGPD export/delete, and a dashboard lead list. No discovery, audits, scoring or outbound yet.
 
 ## Layout
