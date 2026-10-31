@@ -17,7 +17,8 @@ export function useTestDb(): Db {
   beforeEach(async () => {
     await db.execute(sql`
       truncate companies, contacts, field_sources, imports, import_rows,
-               dedupe_candidates, suppressions, stage_events restart identity cascade`);
+               dedupe_candidates, suppressions, stage_events, campaigns, discovery_queries,
+               campaign_companies, jobs, api_cache, audits, findings restart identity cascade`);
   });
   afterAll(close);
   return db;

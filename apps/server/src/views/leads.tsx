@@ -1,106 +1,118 @@
-import { STAGES } from "@wbz/core";
-import type { companies, contacts, fieldSources, importRows, stageEvents } from "@wbz/db";
-import { Flash, fmtDate, Layout } from "./layout.tsx";
+import { PLATFORMS, STAGES } from "@wbz/core";
+import type { audits, companies, contacts, fieldSources, findings, importRows, stageEvents } from "@wbz/db";
+import { Flash, fmtDate, fmtNumber, Layout } from "./layout.tsx";
+import { Badge, EmptyState, FilterBar, KeysetPager, PageHeader } from "./ui.tsx";
 
 type Company = typeof companies.$inferSelect;
 
 export interface LeadListProps {
-  rows: Pick<Company, "id" | "name" | "city" | "state" | "niche" | "domain" | "stage" | "source" | "createdAt">[];
+  rows: Pick<
+    Company,
+    "id" | "name" | "city" | "state" | "niche" | "domain" | "stage" | "source" | "platform" | "createdAt"
+  >[];
   total: number;
-  page: number;
-  pageSize: number;
+  next: string | null;
+  isFirst: boolean;
   filters: Record<string, string>;
-  options: { niches: string[]; cities: string[]; sources: readonly string[] };
-}
-
-function pageHref(filters: Record<string, string>, page: number) {
-  const params = new URLSearchParams({ ...filters, page: String(page) });
-  return `/leads?${params}`;
+  options: {
+    niches: string[];
+    cities: string[];
+    sources: readonly string[];
+    campaigns: { id: string; name: string }[];
+  };
 }
 
 export function LeadList(p: LeadListProps) {
-  const pages = Math.max(1, Math.ceil(p.total / p.pageSize));
-  const select = (name: string, values: readonly string[]) => (
-    <select name={name} id={`f-${name}`}>
-      <option value="">all</option>
-      {values.map((v) => (
-        <option value={v} selected={p.filters[name] === v}>
-          {v}
-        </option>
-      ))}
-    </select>
-  );
+  const hasFilters = Object.keys(p.filters).length > 0;
   return (
     <Layout title="Leads" active="/leads">
-      <h1>Leads ({p.total})</h1>
-      <form class="filters" method="get" action="/leads">
-        <label>
-          Search
-          <input type="search" name="q" value={p.filters.q ?? ""} placeholder="name, domain, email" />
-        </label>
-        <label for="f-stage">
-          Stage
-          {select("stage", STAGES)}
-        </label>
-        <label for="f-niche">
-          Niche
-          {select("niche", p.options.niches)}
-        </label>
-        <label for="f-city">
-          City
-          {select("city", p.options.cities)}
-        </label>
-        <label for="f-source">
-          Source
-          {select("source", p.options.sources)}
-        </label>
-        <button type="submit">Filter</button>
-        <a href="/leads">Clear</a>
-      </form>
-      <table>
-        <thead>
-          <tr>
-            <th>Company</th>
-            <th>City</th>
-            <th>Niche</th>
-            <th>Domain</th>
-            <th>Stage</th>
-            <th>Source</th>
-            <th>Added</th>
-          </tr>
-        </thead>
-        <tbody>
-          {p.rows.length === 0 && (
-            <tr>
-              <td colspan={7} class="muted">
-                No leads yet. <a href="/imports">Import a CSV</a> or <a href="/leads/new">add one</a>.
-              </td>
-            </tr>
+      <PageHeader
+        title="Leads"
+        count={p.total}
+        actions={
+          <>
+            <a class="button" href="/leads/new">
+              Add lead
+            </a>
+            <a class="button secondary" href="/imports">
+              Import CSV
+            </a>
+          </>
+        }
+      />
+      <FilterBar
+        action="/leads"
+        filters={p.filters}
+        search={{ placeholder: "name, domain, email" }}
+        selects={[
+          { name: "stage", label: "Stage", values: STAGES },
+          { name: "niche", label: "Niche", values: p.options.niches },
+          { name: "city", label: "City", values: p.options.cities },
+          { name: "platform", label: "Platform", values: [...PLATFORMS, ["none", "not audited / no site"]] },
+          {
+            name: "website",
+            label: "Website",
+            values: [
+              ["yes", "has website"],
+              ["no", "no website"],
+            ],
+          },
+          {
+            name: "campaign",
+            label: "Campaign",
+            values: p.options.campaigns.map((c) => [c.id, c.name] as [string, string]),
+          },
+          { name: "source", label: "Source", values: p.options.sources },
+        ]}
+      />
+      {p.rows.length === 0 ? (
+        <EmptyState>
+          {hasFilters ? (
+            <>
+              No leads match these filters. <a href="/leads">Clear filters</a>
+            </>
+          ) : (
+            <>
+              No leads yet. <a href="/campaigns">Run a campaign</a>, <a href="/imports">import a CSV</a> or{" "}
+              <a href="/leads/new">add one</a>.
+            </>
           )}
-          {p.rows.map((r) => (
+        </EmptyState>
+      ) : (
+        <table>
+          <thead>
             <tr>
-              <td>
-                <a href={`/leads/${r.id}`}>{r.name}</a>
-              </td>
-              <td>{[r.city, r.state].filter(Boolean).join(" / ")}</td>
-              <td>{r.niche}</td>
-              <td>{r.domain}</td>
-              <td>
-                <span class="badge">{r.stage}</span>
-              </td>
-              <td class="small muted">{r.source}</td>
-              <td class="small muted">{fmtDate(r.createdAt)}</td>
+              <th scope="col">Company</th>
+              <th scope="col">City</th>
+              <th scope="col">Niche</th>
+              <th scope="col">Domain</th>
+              <th scope="col">Platform</th>
+              <th scope="col">Stage</th>
+              <th scope="col">Source</th>
+              <th scope="col">Added</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      <div class="pager">
-        {p.page > 1 && <a href={pageHref(p.filters, p.page - 1)}>← Previous</a>}
-        <span class="muted">
-          Page {p.page} of {pages}
-        </span>
-        {p.page < pages && <a href={pageHref(p.filters, p.page + 1)}>Next →</a>}
-      </div>
+          </thead>
+          <tbody>
+            {p.rows.map((r) => (
+              <tr>
+                <td>
+                  <a href={`/leads/${r.id}`}>{r.name}</a>
+                </td>
+                <td>{[r.city, r.state].filter(Boolean).join(" / ")}</td>
+                <td>{r.niche}</td>
+                <td>{r.domain ?? <span class="muted">no site</span>}</td>
+                <td class="small">{r.platform}</td>
+                <td>
+                  <Badge>{r.stage}</Badge>
+                </td>
+                <td class="small muted">{r.source}</td>
+                <td class="small muted">{fmtDate(r.createdAt)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <KeysetPager action="/leads" filters={p.filters} next={p.next} isFirst={p.isFirst} />
     </Layout>
   );
 }
@@ -111,7 +123,11 @@ export interface LeadPageProps {
   sources: (typeof fieldSources.$inferSelect)[];
   events: (typeof stageEvents.$inferSelect)[];
   importRows: (typeof importRows.$inferSelect)[];
+  campaigns: { id: string; name: string }[];
   flash?: { kind: "ok" | "error"; text: string } | null;
+  tab: "overview" | "audit";
+  audit: { audit: typeof audits.$inferSelect; findings: (typeof findings.$inferSelect)[] } | null;
+  auditPending: boolean;
 }
 
 const FIELD_LABELS: [keyof Company, string][] = [
@@ -124,16 +140,36 @@ const FIELD_LABELS: [keyof Company, string][] = [
   ["email", "Email"],
   ["instagramHandle", "Instagram"],
   ["cnpj", "CNPJ"],
+  ["address", "Address"],
+  ["googleRating", "Google rating"],
+  ["googleReviewCount", "Google reviews"],
   ["notes", "Notes"],
 ];
 
 export function LeadPage(p: LeadPageProps) {
   const c = p.company;
-  const latestSource = (field: string) => p.sources.find((s) => s.entityType === "company" && s.field === field);
   return (
     <Layout title={c.name} active="/leads">
       <h1>{c.name}</h1>
       {p.flash && <Flash kind={p.flash.kind}>{p.flash.text}</Flash>}
+      <nav class="tabs" aria-label="Lead sections">
+        <a href={`/leads/${c.id}`} aria-current={p.tab === "overview" ? "page" : undefined}>
+          Overview
+        </a>
+        <a href={`/leads/${c.id}?tab=audit`} aria-current={p.tab === "audit" ? "page" : undefined}>
+          Audit{p.audit ? ` (${p.audit.findings.length})` : ""}
+        </a>
+      </nav>
+      {p.tab === "audit" ? <AuditTab {...p} /> : <Overview {...p} />}
+    </Layout>
+  );
+}
+
+function Overview(p: LeadPageProps) {
+  const c = p.company;
+  const latestSource = (field: string) => p.sources.find((s) => s.entityType === "company" && s.field === field);
+  return (
+    <>
       <div class="grid">
         <section class="card">
           <h2>Company</h2>
@@ -204,6 +240,17 @@ export function LeadPage(p: LeadPageProps) {
         </section>
       </div>
 
+      {p.campaigns.length > 0 && (
+        <p class="small muted">
+          Found by campaign:{" "}
+          {p.campaigns.map((cp, i) => (
+            <>
+              {i > 0 && ", "}
+              <a href={`/campaigns/${cp.id}`}>{cp.name}</a>
+            </>
+          ))}
+        </p>
+      )}
       <h2>Timeline</h2>
       <table>
         <tbody>
@@ -266,7 +313,150 @@ export function LeadPage(p: LeadPageProps) {
           </p>
         </form>
       </div>
-    </Layout>
+    </>
+  );
+}
+
+const SEVERITY_LABEL = { high: "high", medium: "medium", low: "low" } as const;
+
+function AuditTab(p: LeadPageProps) {
+  const c = p.company;
+  const rerun = (
+    <form method="post" action={`/leads/${c.id}/audit`} class="inline">
+      <button type="submit" class="secondary" disabled={p.auditPending}>
+        {p.auditPending ? "Audit queued…" : p.audit ? "Re-run audit" : "Run audit"}
+      </button>
+    </form>
+  );
+  if (!p.audit) {
+    return (
+      <EmptyState>
+        <p>Not audited yet.{p.auditPending ? " An audit is queued; refresh in a minute." : ""}</p>
+        {rerun}
+      </EmptyState>
+    );
+  }
+  const a = p.audit.audit;
+  const ps = a.pagespeed as {
+    score: number | null;
+    lcpMs: number | null;
+    cls: number | null;
+    inpMs: number | null;
+  } | null;
+  const html = a.htmlChecks as Record<string, unknown> | null;
+  const reviews = a.reviewSignals as { reviewed: number; counts: Record<string, number> } | null;
+  return (
+    <>
+      <p class="muted small">
+        Audited {fmtDate(a.finishedAt)} · status <Badge>{a.status}</Badge>
+        {a.finalUrl && (
+          <>
+            {" "}
+            · <span>{a.finalUrl}</span>
+          </>
+        )}{" "}
+        {rerun}
+      </p>
+      <h2>Findings</h2>
+      {p.audit.findings.length === 0 ? (
+        <p class="muted">No findings: nothing obvious to fix.</p>
+      ) : (
+        <ul class="findings">
+          {p.audit.findings.map((f) => (
+            <li>
+              <Badge kind={`sev-${f.severity}`}>{SEVERITY_LABEL[f.severity]}</Badge> <Badge>{f.offer}</Badge> {f.text}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div class="grid">
+        <section class="card">
+          <h2>PageSpeed (mobile)</h2>
+          {ps ? (
+            <dl>
+              <dt>Performance</dt>
+              <dd>{ps.score ?? "?"}/100</dd>
+              <dt>LCP</dt>
+              <dd>{ps.lcpMs != null ? `${fmtNumber(ps.lcpMs / 1000, 1)} s` : "n/a"}</dd>
+              <dt>CLS</dt>
+              <dd>{ps.cls != null ? fmtNumber(ps.cls, 2) : "n/a"}</dd>
+              <dt>INP (real users)</dt>
+              <dd>{ps.inpMs != null ? `${Math.round(ps.inpMs)} ms` : "not enough Chrome data"}</dd>
+            </dl>
+          ) : (
+            <p class="muted">Not run{a.status === "ok" ? " (no API key, or it failed)" : ""}.</p>
+          )}
+        </section>
+        <section class="card">
+          <h2>Site</h2>
+          {html ? (
+            <dl>
+              <dt>Platform</dt>
+              <dd>{a.platform}</dd>
+              <dt>HTTPS</dt>
+              <dd>{html.https ? "yes" : "no"}</dd>
+              <dt>Mobile viewport</dt>
+              <dd>{html.viewport ? "yes" : "no"}</dd>
+              <dt>Title</dt>
+              <dd>{String(html.title ?? "missing")}</dd>
+              <dt>H1 count</dt>
+              <dd>{String(html.h1Count)}</dd>
+              <dt>WhatsApp link</dt>
+              <dd>{html.whatsapp ? "yes" : "no"}</dd>
+              <dt>Online booking</dt>
+              <dd>{(html.booking as string[]).join(", ") || "none"}</dd>
+              <dt>Contact form</dt>
+              <dd>{html.contactForm ? "yes" : "no"}</dd>
+              <dt>Chat widget</dt>
+              <dd>{(html.chatWidgets as string[]).join(", ") || "none"}</dd>
+              <dt>Copyright year</dt>
+              <dd>{String(html.copyrightYear ?? "not found")}</dd>
+              <dt>Broken links</dt>
+              <dd>{a.brokenLinks ? `${a.brokenLinks.broken.length} of ${a.brokenLinks.checked} checked` : "n/a"}</dd>
+            </dl>
+          ) : (
+            <p class="muted">
+              {a.status === "no_website" ? "No website on record." : `Could not load the site: ${a.error ?? a.status}.`}
+            </p>
+          )}
+        </section>
+        <section class="card">
+          <h2>Google reviews</h2>
+          {reviews ? (
+            <dl>
+              <dt>Reviews read</dt>
+              <dd>{reviews.reviewed}</dd>
+              {Object.entries(reviews.counts).map(([k, v]) => (
+                <>
+                  <dt>{k.replace("_", " ")}</dt>
+                  <dd>{v}</dd>
+                </>
+              ))}
+            </dl>
+          ) : (
+            <p class="muted">Not checked.</p>
+          )}
+          <p class="small muted">Only counts are kept; review text and names are not stored.</p>
+        </section>
+      </div>
+      <details class="raw">
+        <summary>Raw audit data</summary>
+        <pre>
+          {JSON.stringify(
+            {
+              htmlChecks: html,
+              pagespeed: ps,
+              brokenLinks: a.brokenLinks,
+              reviews,
+              notes: (a.raw as { notes?: string[] } | null)?.notes,
+            },
+            null,
+            2,
+          )}
+        </pre>
+        {a.rawPrunedAt && <p class="small muted">HTML excerpt deleted on {fmtDate(a.rawPrunedAt)} (retention).</p>}
+      </details>
+    </>
   );
 }
 

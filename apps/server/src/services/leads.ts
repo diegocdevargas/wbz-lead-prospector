@@ -1,16 +1,29 @@
-import { hashSuppressionKey, normalizeCnpj, normalizeEmail, normalizePhone, type Stage } from "@wbz/core";
 import {
+  hashSuppressionKey,
+  normalizeCnpj,
+  normalizeEmail,
+  normalizePhone,
+  type Platform,
+  type Stage,
+} from "@wbz/core";
+import {
+  apiCache,
+  audits,
+  campaignCompanies,
+  campaigns,
   companies,
   contacts,
   type Db,
   type DbOrTx,
   dedupeCandidates,
   fieldSources,
+  findings,
   importRows,
   stageEvents,
   suppressions,
 } from "@wbz/db";
-import { and, asc, count, desc, eq, ilike, inArray, or, type SQL, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, inArray, isNotNull, isNull, or, type SQL, sql } from "drizzle-orm";
+import { sha256Hex } from "../lib/hash.ts";
 
 export interface LeadFilters {
   q?: string | undefined;
@@ -18,10 +31,16 @@ export interface LeadFilters {
   niche?: string | undefined;
   city?: string | undefined;
   source?: (typeof companies.source.enumValues)[number] | undefined;
-  page?: number | undefined;
+  platform?: Platform | "none" | undefined;
+  website?: "yes" | "no" | undefined;
+  campaign?: string | undefined;
+  /** Keyset cursor: the last row of the previous page. */
+  cursor?: { t: Date; id: string } | undefined;
 }
 
 export const PAGE_SIZE = 50;
+
+const msCreated = sql`date_trunc('milliseconds', ${companies.createdAt})`;
 
 /** Escape LIKE wildcards so user search text is matched literally. */
 function likeEscape(text: string): string {
@@ -39,8 +58,23 @@ export async function listLeads(db: DbOrTx, f: LeadFilters) {
   if (f.niche) where.push(ilike(companies.niche, likeEscape(f.niche)));
   if (f.city) where.push(ilike(companies.city, likeEscape(f.city)));
   if (f.source) where.push(eq(companies.source, f.source));
+  if (f.platform === "none") where.push(isNull(companies.platform));
+  else if (f.platform) where.push(eq(companies.platform, f.platform));
+  if (f.website === "yes") where.push(isNotNull(companies.websiteUrl));
+  if (f.website === "no") where.push(isNull(companies.websiteUrl));
+  if (f.campaign) {
+    where.push(
+      sql`exists (select 1 from ${campaignCompanies} cc where cc.company_id = ${companies.id} and cc.campaign_id = ${f.campaign})`,
+    );
+  }
   const cond = where.length ? and(...where) : undefined;
-  const page = Math.max(1, f.page ?? 1);
+  const page: SQL[] = [...where];
+  if (f.cursor) {
+    // Compare at millisecond precision, the same precision the cursor (a JS Date) carries.
+    page.push(
+      sql`(${msCreated} < ${f.cursor.t.toISOString()}::timestamptz or (${msCreated} = ${f.cursor.t.toISOString()}::timestamptz and ${companies.id} > ${f.cursor.id}))`,
+    );
+  }
 
   const [rows, [total]] = await Promise.all([
     db
@@ -53,16 +87,16 @@ export async function listLeads(db: DbOrTx, f: LeadFilters) {
         domain: companies.domain,
         stage: companies.stage,
         source: companies.source,
+        platform: companies.platform,
         createdAt: companies.createdAt,
       })
       .from(companies)
-      .where(cond)
-      .orderBy(desc(companies.createdAt), asc(companies.id))
-      .limit(PAGE_SIZE)
-      .offset((page - 1) * PAGE_SIZE),
+      .where(page.length ? and(...page) : undefined)
+      .orderBy(sql`${msCreated} desc`, asc(companies.id))
+      .limit(PAGE_SIZE + 1),
     db.select({ n: count() }).from(companies).where(cond),
   ]);
-  return { rows, total: total?.n ?? 0, page };
+  return { rows: rows.slice(0, PAGE_SIZE), hasMore: rows.length > PAGE_SIZE, total: total?.n ?? 0 };
 }
 
 export async function filterOptions(db: DbOrTx) {
@@ -85,7 +119,12 @@ export async function getLead(db: DbOrTx, id: string) {
     db.select().from(stageEvents).where(eq(stageEvents.companyId, id)).orderBy(desc(stageEvents.createdAt)),
     db.select().from(importRows).where(eq(importRows.companyId, id)).orderBy(desc(importRows.id)),
   ]);
-  return { company, contacts: people, sources, events, importRows: rows };
+  const leadCampaigns = await db
+    .select({ id: campaigns.id, name: campaigns.name })
+    .from(campaignCompanies)
+    .innerJoin(campaigns, eq(campaigns.id, campaignCompanies.campaignId))
+    .where(eq(campaignCompanies.companyId, id));
+  return { company, contacts: people, sources, events, importRows: rows, campaigns: leadCampaigns };
 }
 
 export async function changeStage(db: Db, id: string, to: Stage, note: string | null) {
@@ -107,7 +146,11 @@ export async function changeStage(db: Db, id: string, to: Stage, note: string | 
 export async function exportLead(db: DbOrTx, id: string) {
   const lead = await getLead(db, id);
   if (!lead) return null;
-  return { exportedAt: new Date().toISOString(), ...lead };
+  const [auditRows, findingRows] = await Promise.all([
+    db.select().from(audits).where(eq(audits.companyId, id)).orderBy(desc(audits.finishedAt)),
+    db.select().from(findings).where(eq(findings.companyId, id)),
+  ]);
+  return { exportedAt: new Date().toISOString(), ...lead, audits: auditRows, findings: findingRows };
 }
 
 /**
@@ -144,6 +187,19 @@ export async function deleteLead(db: Db, id: string, opts: { suppress: boolean; 
       }
     }
     await tx.delete(importRows).where(eq(importRows.companyId, id));
+    // Cached Places data for this business (audits, findings, sources and campaign links cascade).
+    if (company.placeId) {
+      await tx.delete(apiCache).where(
+        or(
+          and(eq(apiCache.provider, "places_details"), eq(apiCache.keyHash, await sha256Hex(company.placeId))),
+          // Text Search pages that listed this business (a re-run simply refetches them).
+          and(
+            eq(apiCache.provider, "places_text_search"),
+            sql`${apiCache.response}::text like ${`%${likeEscape(company.placeId)}%`}`,
+          ),
+        ),
+      );
+    }
     await tx.delete(companies).where(eq(companies.id, id));
     return true;
   });

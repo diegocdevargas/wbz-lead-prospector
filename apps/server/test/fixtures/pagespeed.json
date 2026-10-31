@@ -1,0 +1,24 @@
+{
+  "lighthouseResult": {
+    "categories": {
+      "performance": {
+        "score": 0.23
+      }
+    },
+    "audits": {
+      "largest-contentful-paint": {
+        "numericValue": 9200
+      },
+      "cumulative-layout-shift": {
+        "numericValue": 0.31
+      }
+    }
+  },
+  "loadingExperience": {
+    "metrics": {
+      "INTERACTION_TO_NEXT_PAINT": {
+        "percentile": 620
+      }
+    }
+  }
+}

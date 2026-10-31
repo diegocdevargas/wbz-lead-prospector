@@ -19,18 +19,18 @@ The system holds business contact data (LGPD), API keys that cost money, and a W
 | **Input** | Zod on every form, query, webhook body, env var and LLM output. Body size limits | M1 ✅, continues |
 | **Webhooks** | WhatsApp: verify `X-Hub-Signature-256` with a timing-safe compare on the raw body, return 200 fast, dedupe by message id, enqueue. Reject replays older than 5 minutes when the payload has a timestamp | M4 |
 | **Opt-out links** | HMAC-signed token (lead id and channel), no expiry, one click, no login. Works even if the lead was deleted | M3 |
-| **SSRF (website audit)** | The audit fetches URLs from untrusted sources. Allow only `http(s)` on ports 80 and 443. Resolve DNS and block private, loopback, link-local and metadata ranges (also after each redirect). At most 5 redirects, 10s timeout, 2 MB body cap, no cookies. Fixture tests for each rule | M2 |
+| **SSRF (website audit)** | The audit fetches URLs from untrusted sources. Allow only `http(s)` on ports 80 and 443. Resolve DNS and block private, loopback, link-local and metadata ranges (also after each redirect). At most 5 redirects, 10s timeout, 2 MB body cap, no cookies. Fixture tests for each rule. Residual: DNS rebinding between check and connect (see README) | M2 ✅ |
 | **Untrusted text into LLMs** | Website HTML, reviews, Instagram bios and WhatsApp messages can carry prompt injection. Wrap them as quoted data in prompts. Agent tools are scoped to the current lead id on the server, not by what the model passes. Tools that change state validate their arguments. The model can't send first-contact outbound (drafts only) or change stage outside the allowed transitions | M2–M4 |
 | **LLM output** | Zod schema, one retry, then manual review. Rendered escaped, never as HTML. Links in drafts are only the expected `wa.me` and opt-out hosts | M3 |
 | **Outbound kill switch** | `OUTBOUND_ENABLED` env flag (default `false` outside production) checked right before every send, plus the daily cap and the suppression check at send time, not only at draft time | M3 |
 | **Secrets** | Only in env and Wrangler secrets. Validated at startup. Never logged. Keys restricted by API and referrer or IP where the provider allows it (Google key: Places and PageSpeed only). One key per environment. Never rotate `SUPPRESSION_SECRET`; rotate the others yearly or on any leak | M1 ✅, per key |
 | **Logs** | No bodies at info level. Phones and emails masked. No query strings. Request id on every line | M1 ✅ |
 | **Audit log** | Who did what: approvals, edits, sends, deletes, exports, opt-outs, config changes. Append-only table. `stage_events` already covers stages | M3 |
-| **Rate limits** | Per-IP limit on public routes. Per-provider token bucket on outgoing API calls, with response caching | M2–M4 |
-| **Budget caps** | Per-campaign caps for Places and Claude, checked before the call, not after | M2/M3 |
+| **Rate limits** | Per-IP limit on public routes. Per-provider token bucket on outgoing API calls, with response caching | Places/PageSpeed M2 ✅, rest M3–M4 |
+| **Budget caps** | Per-campaign caps for Places and Claude, checked before the call, not after | Places M2 ✅, Claude M3 |
 | **Dependencies** | Dependabot, `pnpm audit` in CI, lockfile frozen. New dependency only with a stated reason | M1 ✅ |
 | **CI and repo** | Least-privilege workflow permissions (`contents: read`). Branch protection on `main` (PR plus green CI). GitHub secret scanning and push protection on. Actions pinned to a major version | Turn on in GitHub settings now |
-| **Data lifecycle** | LGPD export and delete per lead. Suppressions as HMAC. Raw API responses and audit HTML kept 90 days, then pruned by a cron job. Neon point-in-time restore on (7 days) | M1 ✅, pruning in M2 |
+| **Data lifecycle** | LGPD export and delete per lead. Suppressions as HMAC. Raw API responses and audit HTML kept 90 days, then pruned by a cron job. Google Places values expire after 30 days unless another source backs them ([ADR-0004](decisions/0004-google-places-retention.md)). Neon point-in-time restore on (7 days) | M1 ✅, pruning M2 ✅ |
 | **Dashboard assistant** | Read-only tools; writes are proposals the operator confirms; never sends outbound. See [assistant.md](assistant.md) | M3–M5 |
 | **Demo mode** | Separate deployment, separate database, seeded fake data, no outbound credentials at all. See [ADR-0003](decisions/0003-demo-separate-deployment.md) | M5 |
 

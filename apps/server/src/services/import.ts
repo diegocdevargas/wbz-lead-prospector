@@ -22,7 +22,7 @@ import {
 import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import { sha256Hex } from "../lib/hash.ts";
 
-export type ImportSource = "manual_csv" | "manual_paste" | "manual_form";
+export type ImportSource = "manual_csv" | "manual_paste" | "manual_form" | "google_places";
 export type RowOutcome = "created" | "merged" | "review" | "suppressed" | "invalid";
 
 export interface ImportInput {
@@ -32,6 +32,12 @@ export interface ImportInput {
   content: string;
   /** Rows after column mapping. */
   rows: Record<string, string>[];
+  /** Per-row provenance reference (e.g. a Places place_id). Defaults to `import:<id>`. */
+  sourceRefs?: (string | null)[];
+  /** Provider retention limit: these fields' field_sources rows expire at `expiresAt` (Places terms). */
+  expiry?: { fields: readonly string[]; expiresAt: Date };
+  /** Runs inside the import transaction after each row, e.g. to attach Places extras. */
+  afterRow?: (tx: Tx, index: number, row: RowReport) => Promise<void>;
 }
 
 export interface RowReport {
@@ -110,7 +116,9 @@ export async function runImport(
       };
 
       for (const [index, raw] of input.rows.entries()) {
-        const row = await importRow(tx, deps, input.source, imp.id, index + 1, raw);
+        const sourceRef = input.sourceRefs?.[index] ?? `import:${imp.id}`;
+        const row = await importRow(tx, deps, { ...input, sourceRef }, imp.id, index + 1, raw);
+        await input.afterRow?.(tx, index, row);
         report.counts[row.outcome]++;
         report.rows.push(row);
       }
@@ -135,10 +143,16 @@ export class ImportTooLargeError extends Error {
   }
 }
 
+interface RowContext {
+  source: ImportSource;
+  sourceRef: string;
+  expiry?: ImportInput["expiry"];
+}
+
 async function importRow(
   tx: Tx,
   deps: ImportDeps,
-  source: ImportSource,
+  ctx: RowContext,
   importId: string,
   rowNumber: number,
   raw: Record<string, string>,
@@ -176,14 +190,13 @@ async function importRow(
   }
 
   const decision = decideMatch(lead, await findCandidates(tx, deps.config, lead), deps.config);
-  const sourceRef = `import:${importId}`;
 
   if (decision.kind === "merge") {
-    await mergeInto(tx, decision.companyId, lead, source, sourceRef);
+    await mergeInto(tx, decision.companyId, lead, ctx);
     return record("merged", decision.companyId, [`matched on ${decision.rule}`, ...warnings]);
   }
 
-  const companyId = await createCompany(tx, lead, source, sourceRef);
+  const companyId = await createCompany(tx, lead, ctx);
   if (decision.kind === "create") return record("created", companyId, warnings);
 
   for (const c of decision.candidates) {
@@ -253,7 +266,8 @@ const SOURCED_COMPANY_FIELDS = [
   "notes",
 ] as const;
 
-async function createCompany(tx: Tx, lead: NormalizedLead, source: ImportSource, sourceRef: string) {
+async function createCompany(tx: Tx, lead: NormalizedLead, ctx: RowContext) {
+  const { source } = ctx;
   const [company] = await tx
     .insert(companies)
     .values({
@@ -275,13 +289,13 @@ async function createCompany(tx: Tx, lead: NormalizedLead, source: ImportSource,
     actor: "system",
     note: `created by ${source}`,
   });
-  await recordSources(tx, company.id, lead, source, sourceRef);
-  await upsertContact(tx, company.id, lead, source, sourceRef);
+  await recordSources(tx, company.id, lead, ctx);
+  await upsertContact(tx, company.id, lead, ctx.source, ctx.sourceRef);
   return company.id;
 }
 
 /** Fill only empty columns; never overwrite. Every value still gets a field_sources row. */
-async function mergeInto(tx: Tx, companyId: string, lead: NormalizedLead, source: ImportSource, sourceRef: string) {
+async function mergeInto(tx: Tx, companyId: string, lead: NormalizedLead, ctx: RowContext) {
   const values = companyValues(lead);
   for (const [key, value] of Object.entries(values) as [keyof typeof values, string | null][]) {
     if (value == null) continue;
@@ -292,8 +306,8 @@ async function mergeInto(tx: Tx, companyId: string, lead: NormalizedLead, source
       .set({ [key]: value })
       .where(and(eq(companies.id, companyId), isNull(companies[key])));
   }
-  await recordSources(tx, companyId, lead, source, sourceRef);
-  await upsertContact(tx, companyId, lead, source, sourceRef);
+  await recordSources(tx, companyId, lead, ctx);
+  await upsertContact(tx, companyId, lead, ctx.source, ctx.sourceRef);
 }
 
 async function cnpjTaken(tx: Tx, cnpj: string | null, exceptId: string | null): Promise<boolean> {
@@ -303,12 +317,14 @@ async function cnpjTaken(tx: Tx, cnpj: string | null, exceptId: string | null): 
   return Boolean(hit);
 }
 
-async function recordSources(tx: Tx, companyId: string, lead: NormalizedLead, source: ImportSource, sourceRef: string) {
+async function recordSources(tx: Tx, companyId: string, lead: NormalizedLead, ctx: RowContext) {
+  const { source, sourceRef, expiry } = ctx;
   const all: Record<string, string | null> = { name: lead.companyName, ...companyValues(lead) };
   const rows = SOURCED_COMPANY_FIELDS.flatMap((field) => {
     const value = all[field];
+    const expiresAt = expiry?.fields.includes(field) ? expiry.expiresAt : null;
     return value
-      ? [{ companyId, entityType: "company" as const, entityId: companyId, field, value, source, sourceRef }]
+      ? [{ companyId, entityType: "company" as const, entityId: companyId, field, value, source, sourceRef, expiresAt }]
       : [];
   });
   if (rows.length > 0) await tx.insert(fieldSources).values(rows);

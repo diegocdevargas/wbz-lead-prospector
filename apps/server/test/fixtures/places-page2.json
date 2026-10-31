@@ -1,0 +1,31 @@
+{
+  "places": [
+    {
+      "id": "ChIJtest0005",
+      "displayName": {
+        "text": "Clínica Optout Teste",
+        "languageCode": "pt"
+      },
+      "formattedAddress": "Rua Teste, 5 - Centro, Chapecó - SC, 89800-000, Brasil",
+      "addressComponents": [
+        {
+          "longText": "Chapecó",
+          "shortText": "Chapecó",
+          "types": ["administrative_area_level_2", "political"]
+        },
+        {
+          "longText": "Santa Catarina",
+          "shortText": "SC",
+          "types": ["administrative_area_level_1", "political"]
+        }
+      ],
+      "rating": 4.6,
+      "userRatingCount": 87,
+      "googleMapsUri": "https://maps.google.com/?cid=5",
+      "businessStatus": "OPERATIONAL",
+      "primaryType": "dentist",
+      "websiteUri": "https://optout.test/",
+      "nationalPhoneNumber": "(49) 3322-0005"
+    }
+  ]
+}
