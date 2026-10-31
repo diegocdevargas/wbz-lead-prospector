@@ -240,6 +240,16 @@ describe("website audit", () => {
   });
 });
 
+describe("LGPD delete", () => {
+  it("also removes cached Places responses that mention the business", async () => {
+    await run();
+    const [sorriso] = await db.select().from(companies).where(eq(companies.placeId, "ChIJtest0001"));
+    const { deleteLead } = await import("../src/services/leads.ts");
+    await deleteLead(db, sorriso?.id as string, { suppress: false, secret: SECRET });
+    expect(JSON.stringify(await db.select().from(apiCache))).not.toContain("ChIJtest0001");
+  });
+});
+
 describe("retention (prune job)", () => {
   it("clears expired Places values unless another source backs them", async () => {
     const { rt } = await run();

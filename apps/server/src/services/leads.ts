@@ -189,9 +189,16 @@ export async function deleteLead(db: Db, id: string, opts: { suppress: boolean; 
     await tx.delete(importRows).where(eq(importRows.companyId, id));
     // Cached Places data for this business (audits, findings, sources and campaign links cascade).
     if (company.placeId) {
-      await tx
-        .delete(apiCache)
-        .where(and(eq(apiCache.provider, "places_details"), eq(apiCache.keyHash, await sha256Hex(company.placeId))));
+      await tx.delete(apiCache).where(
+        or(
+          and(eq(apiCache.provider, "places_details"), eq(apiCache.keyHash, await sha256Hex(company.placeId))),
+          // Text Search pages that listed this business (a re-run simply refetches them).
+          and(
+            eq(apiCache.provider, "places_text_search"),
+            sql`${apiCache.response}::text like ${`%${likeEscape(company.placeId)}%`}`,
+          ),
+        ),
+      );
     }
     await tx.delete(companies).where(eq(companies.id, id));
     return true;
