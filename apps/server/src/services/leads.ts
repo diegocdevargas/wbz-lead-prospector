@@ -88,6 +88,7 @@ export async function listLeads(db: DbOrTx, f: LeadFilters) {
         stage: companies.stage,
         source: companies.source,
         platform: companies.platform,
+        groupId: companies.groupId,
         createdAt: companies.createdAt,
       })
       .from(companies)
@@ -358,6 +359,11 @@ export async function mergeCandidate(db: Db, candidateId: string) {
     await tx.update(fieldSources).set({ companyId: keepId }).where(eq(fieldSources.companyId, dropId));
     await tx.update(stageEvents).set({ companyId: keepId }).where(eq(stageEvents.companyId, dropId));
     await tx.update(importRows).set({ companyId: keepId }).where(eq(importRows.companyId, dropId));
+    // Branches of the dropped lead now belong to the kept one (and the kept one cannot point at itself).
+    await tx
+      .update(companies)
+      .set({ groupId: sql`case when ${companies.id} = ${keepId} then null else ${keepId}::uuid end` })
+      .where(eq(companies.groupId, dropId));
     await tx.delete(companies).where(eq(companies.id, dropId));
     if (Object.keys(fill).length) await tx.update(companies).set(fill).where(eq(companies.id, keepId));
 
@@ -381,4 +387,93 @@ export async function mergeCandidate(db: Db, candidateId: string) {
     });
     return keepId;
   });
+}
+
+/**
+ * "Same group (branch)" from the Duplicates screen: B becomes a branch of A's
+ * group. Groups are one level deep: B (and any branches B had) point at the
+ * group's main lead. Logged on B's timeline.
+ */
+export async function groupCandidate(db: Db, candidateId: string) {
+  return db.transaction(async (tx) => {
+    const [cand] = await tx
+      .select()
+      .from(dedupeCandidates)
+      .where(and(eq(dedupeCandidates.id, candidateId), eq(dedupeCandidates.status, "pending")))
+      .for("update");
+    if (!cand) return null;
+    const rows = await tx
+      .select()
+      .from(companies)
+      .where(inArray(companies.id, [cand.companyA, cand.companyB]))
+      .for("update");
+    const a = rows.find((r) => r.id === cand.companyA);
+    const b = rows.find((r) => r.id === cand.companyB);
+    if (!a || !b) return null;
+    const headId = a.groupId ?? a.id;
+    const [head] = headId === a.id ? [a] : await tx.select().from(companies).where(eq(companies.id, headId));
+    if (!head) return null;
+
+    // When B already is the main lead of A's group there is nothing to link.
+    if (headId !== b.id) {
+      await tx
+        .update(companies)
+        .set({ groupId: headId })
+        .where(or(eq(companies.id, b.id), eq(companies.groupId, b.id)));
+    }
+    await tx
+      .update(dedupeCandidates)
+      .set({ status: "grouped", resolvedAt: new Date() })
+      .where(eq(dedupeCandidates.id, cand.id));
+    await tx.insert(stageEvents).values({
+      companyId: b.id,
+      fromStage: b.stage,
+      toStage: b.stage,
+      actor: "diego",
+      note: `linked as a branch of "${head.name}"`,
+    });
+    return headId;
+  });
+}
+
+/** Take a lead out of its group (or, for a main lead, dissolve the group). */
+export async function ungroupLead(db: Db, id: string) {
+  return db.transaction(async (tx) => {
+    const [c] = await tx.select().from(companies).where(eq(companies.id, id)).for("update");
+    if (!c) return false;
+    const freed = c.groupId
+      ? await tx.update(companies).set({ groupId: null }).where(eq(companies.id, id)).returning({ id: companies.id })
+      : await tx
+          .update(companies)
+          .set({ groupId: null })
+          .where(eq(companies.groupId, id))
+          .returning({ id: companies.id });
+    if (freed.length) {
+      await tx.insert(stageEvents).values({
+        companyId: id,
+        fromStage: c.stage,
+        toStage: c.stage,
+        actor: "diego",
+        note: c.groupId ? "removed from its group" : `group dissolved (${freed.length} branch(es) unlinked)`,
+      });
+    }
+    return true;
+  });
+}
+
+/** The lead's group: its main lead and every branch (empty when it is not in a group). */
+export async function getGroup(db: DbOrTx, company: { id: string; groupId: string | null }) {
+  const headId = company.groupId ?? company.id;
+  const members = await db
+    .select({
+      id: companies.id,
+      name: companies.name,
+      city: companies.city,
+      groupId: companies.groupId,
+      stage: companies.stage,
+    })
+    .from(companies)
+    .where(or(eq(companies.id, headId), eq(companies.groupId, headId)))
+    .orderBy(companies.name);
+  return members.length > 1 ? members : [];
 }

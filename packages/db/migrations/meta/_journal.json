@@ -22,6 +22,13 @@
       "when": 1793478880395,
       "tag": "0002_m2_discovery_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793498723921,
+      "tag": "0003_lead_groups",
+      "breakpoints": true
     }
   ]
 }

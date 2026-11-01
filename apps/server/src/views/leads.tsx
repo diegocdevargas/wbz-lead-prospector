@@ -8,7 +8,7 @@ type Company = typeof companies.$inferSelect;
 export interface LeadListProps {
   rows: Pick<
     Company,
-    "id" | "name" | "city" | "state" | "niche" | "domain" | "stage" | "source" | "platform" | "createdAt"
+    "id" | "name" | "city" | "state" | "niche" | "domain" | "stage" | "source" | "platform" | "groupId" | "createdAt"
   >[];
   total: number;
   next: string | null;
@@ -97,6 +97,7 @@ export function LeadList(p: LeadListProps) {
               <tr>
                 <td>
                   <a href={`/leads/${r.id}`}>{r.name}</a>
+                  {r.groupId && <span class="small muted"> · branch</span>}
                 </td>
                 <td>{[r.city, r.state].filter(Boolean).join(" / ")}</td>
                 <td>{r.niche}</td>
@@ -126,6 +127,7 @@ export interface LeadPageProps {
   campaigns: { id: string; name: string }[];
   flash?: { kind: "ok" | "error"; text: string } | null;
   tab: "overview" | "audit";
+  group: { id: string; name: string; city: string | null; groupId: string | null; stage: string }[];
   audit: { audit: typeof audits.$inferSelect; findings: (typeof findings.$inferSelect)[] } | null;
   auditPending: boolean;
 }
@@ -250,6 +252,34 @@ function Overview(p: LeadPageProps) {
             </>
           ))}
         </p>
+      )}
+      {p.group.length > 0 && (
+        <section class="card">
+          <h2>Group ({p.group.length} units)</h2>
+          <p class="small muted">
+            {c.groupId
+              ? "This lead is a branch. Outreach goes to the main lead."
+              : "This is the group's main lead. Outreach goes here and can mention every unit."}
+          </p>
+          <ul>
+            {p.group.map((m) => (
+              <li>
+                {m.id === c.id ? <strong>{m.name}</strong> : <a href={`/leads/${m.id}`}>{m.name}</a>}
+                {m.city && <span class="muted"> · {m.city}</span>}
+                {!m.groupId && <Badge>main</Badge>}
+              </li>
+            ))}
+          </ul>
+          <form
+            method="post"
+            action={`/leads/${c.id}/ungroup`}
+            data-confirm={c.groupId ? "Remove this lead from the group?" : "Dissolve the whole group?"}
+          >
+            <button type="submit" class="secondary">
+              {c.groupId ? "Remove from group" : "Dissolve group"}
+            </button>
+          </form>
+        </section>
       )}
       <h2>Timeline</h2>
       <table>

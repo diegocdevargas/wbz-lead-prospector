@@ -21,7 +21,7 @@ Stack decision: [ADR-0001](decisions/0001-server-rendered-dashboard.md) (server-
 | --- | --- | --- |
 | Leads list | Filters, stage, source | M1 ✅ |
 | Lead page | Fields with sources, timeline, stage change, export, delete | M1 ✅ |
-| Import, Duplicates, Opt-outs | CSV, paste, form, dedupe review, suppression list | M1 ✅ |
+| Import, Duplicates, Opt-outs | CSV, paste, form, dedupe review (merge, same group, not a duplicate), suppression list | M1 ✅ |
 | **App shell v2** | Grouped nav, shared filter bar, table, pager, empty states, flash messages. `app.js` shell for shortcuts | M2 ✅ |
 | **Campaigns** | Create niche × city list, run discovery, see progress, counts, and Places spend against the cap | M2 ✅ |
 | **Lead page: Audit tab** | Findings in PT with evidence, PageSpeed numbers, detected platform, raw audit (collapsed), re-run | M2 ✅ |

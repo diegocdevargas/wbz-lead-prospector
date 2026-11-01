@@ -1,4 +1,4 @@
-import { campaigns, companies, jobs } from "@wbz/db";
+import { campaigns, companies, dedupeCandidates, jobs } from "@wbz/db";
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../src/app.tsx";
@@ -186,5 +186,30 @@ describe("M2 screens", () => {
     expect(names(first)).toHaveLength(50);
     expect(names(second)).toHaveLength(5);
     expect(new Set([...names(first), ...names(second)]).size).toBe(55);
+  });
+
+  it("groups a duplicate pair as branches and shows the group on the lead page", async () => {
+    const mk = (name: string) => ({ name, normalizedName: name, matchName: name, source: "google_places" as const });
+    const [a, b] = await db
+      .insert(companies)
+      .values([mk("Sorriso Centro"), mk("Sorriso Efapi")])
+      .returning();
+    const [cand] = await db
+      .insert(dedupeCandidates)
+      .values({ companyA: a?.id as string, companyB: b?.id as string, rule: "domain_city_mismatch" })
+      .returning();
+    expect(await (await get("/dedupe")).text()).toContain("Same group (branch)");
+    const res = await post(`/dedupe/${cand?.id}/group`, {});
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/dedupe?done=grouped");
+    const page = await (await get(`/leads/${b?.id}`)).text();
+    expect(page).toContain("This lead is a branch");
+    expect(page).toContain("Sorriso Centro");
+    expect((await post(`/leads/${b?.id}/ungroup`, {})).status).toBe(303);
+    const [after] = await db
+      .select()
+      .from(companies)
+      .where(eq(companies.id, b?.id as string));
+    expect(after?.groupId).toBeNull();
   });
 });
