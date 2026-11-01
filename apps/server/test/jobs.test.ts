@@ -76,3 +76,15 @@ describe("jobs", () => {
     expect(await job(stuck as string)).toMatchObject({ status: "failed" });
   });
 });
+
+describe("local queue priority", () => {
+  it("runs discovery pages before queued audits", async () => {
+    const { MemoryQueue } = await import("../src/services/memory-queue.ts");
+    const q = new MemoryQueue({} as never, 1);
+    await q.send("audit-1");
+    await q.send("audit-2");
+    await q.send("page-2", 0, true);
+    await q.send("audit-1"); // re-send does not duplicate
+    expect(q.pending).toEqual(["page-2", "audit-2", "audit-1"]);
+  });
+});

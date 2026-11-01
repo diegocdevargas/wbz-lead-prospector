@@ -82,6 +82,8 @@ describe("M2 screens", () => {
     const created = await post("/campaigns", { ...CAMPAIGN, cities: "Chapecó" });
     const id = (created.headers.get("location") as string).split("/")[2]?.split("?")[0] as string;
     expect((await post(`/campaigns/${id}/run`, {})).status).toBe(303);
+    const running = await (await get(`/campaigns/${id}`)).text();
+    expect(running).toMatch(/<button type="submit" disabled="" title="Discovery is still running">Running…<\/button>/);
     const { rt } = makeRuntime(db, http);
     await drain({ ...rt, queue }, queue);
 

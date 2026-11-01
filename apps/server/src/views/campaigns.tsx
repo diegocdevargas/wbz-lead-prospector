@@ -159,6 +159,7 @@ export function CampaignPage(p: {
   stats: { leads: number; audited: number; withSite: number };
   platforms: { platform: string | null; n: number }[];
   discoveryEnabled: boolean;
+  maxPages: number;
   flash?: FlashMessage;
 }) {
   const c = p.campaign;
@@ -169,8 +170,12 @@ export function CampaignPage(p: {
         title={c.name}
         actions={
           <form method="post" action={`/campaigns/${c.id}/run`} class="inline">
-            <button type="submit" disabled={!p.discoveryEnabled || c.placesRequestsUsed >= c.placesRequestCap}>
-              {p.queries.length ? "Run new cities" : "Run discovery"}
+            <button
+              type="submit"
+              disabled={!p.discoveryEnabled || pending > 0 || c.placesRequestsUsed >= c.placesRequestCap}
+              title={pending > 0 ? "Discovery is still running" : undefined}
+            >
+              {pending > 0 ? "Running…" : p.queries.some((q) => q.page === 1) ? "Run new cities" : "Run discovery"}
             </button>
           </form>
         }
@@ -181,7 +186,12 @@ export function CampaignPage(p: {
           Stopped: the Places request cap was reached. Raise it below to continue.
         </p>
       )}
-      {pending > 0 && <p class="muted">{pending} page(s) still running. Refresh to update.</p>}
+      {pending > 0 && (
+        <p class="muted">
+          {pending} page(s) of results still queued. Each city is searched in pages of 20 results (up to {p.maxPages});
+          pages run before the site audits. Refresh to update.
+        </p>
+      )}
       <div class="grid">
         <section class="card">
           <h2>Setup</h2>
@@ -266,7 +276,7 @@ export function CampaignPage(p: {
           <thead>
             <tr>
               <th scope="col">City</th>
-              <th scope="col">Page</th>
+              <th scope="col">Page (20 results each)</th>
               <th scope="col">Query</th>
               <th scope="col">Status</th>
               <th scope="col">Results</th>

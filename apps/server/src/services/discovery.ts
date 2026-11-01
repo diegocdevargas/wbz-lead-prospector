@@ -63,7 +63,7 @@ export async function startCampaign(rt: Runtime, campaignId: string) {
     return out;
   });
   if (ids === null) return false;
-  await dispatch(rt.queue, ids);
+  await dispatch(rt.queue, ids, { urgent: true });
   await refreshCampaignStatus(rt.db, campaignId);
   return true;
 }
@@ -95,7 +95,7 @@ export async function runDiscoveryQuery(rt: Runtime, payload: Record<string, unk
     return m ? [m] : [];
   });
 
-  const auditJobIds = await rt.db.transaction(async (tx) => {
+  const queued = await rt.db.transaction(async (tx) => {
     // Places we already have (by place_id) only get their Places values refreshed.
     const known = mapped.length
       ? await tx
@@ -160,7 +160,8 @@ export async function runDiscoveryQuery(rt: Runtime, payload: Record<string, unk
       .set({ status: "done", resultCount: data.places.length, created, merged, importId })
       .where(eq(discoveryQueries.id, dq.id));
 
-    const ids: (string | null)[] = [];
+    let nextPage: string | null = null;
+    const audits: (string | null)[] = [];
     if (data.nextPageToken && dq.page < rt.settings.config.places.maxPagesPerQuery) {
       const [next] = await tx
         .insert(discoveryQueries)
@@ -180,7 +181,7 @@ export async function runDiscoveryQuery(rt: Runtime, payload: Record<string, unk
           payload: { queryId: next.id },
           maxAttempts: rt.settings.config.jobs.maxAttempts,
         });
-        ids.push(job.id);
+        nextPage = job.id;
       }
     }
     // First audit of each lead, once. Re-audits are queued from the lead page with their own key.
@@ -191,12 +192,14 @@ export async function runDiscoveryQuery(rt: Runtime, payload: Record<string, unk
         payload: { companyId, campaignId: campaign.id },
         maxAttempts: rt.settings.config.jobs.maxAttempts,
       });
-      ids.push(job.id);
+      audits.push(job.id);
     }
-    return ids;
+    return { nextPage, audits };
   });
 
-  await dispatch(rt.queue, auditJobIds);
+  // The next page jumps ahead of the audits, so discovery finishes first and audits follow.
+  await dispatch(rt.queue, [queued.nextPage], { urgent: true });
+  await dispatch(rt.queue, queued.audits);
   await refreshCampaignStatus(rt.db, campaign.id);
 }
 
@@ -339,6 +342,6 @@ export async function updateCampaignCap(rt: Runtime, campaignId: string, cap: nu
     ).map((j) => j.id);
   });
   if (ids === null) return false;
-  await dispatch(rt.queue, ids);
+  await dispatch(rt.queue, ids, { urgent: true });
   return true;
 }

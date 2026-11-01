@@ -37,13 +37,16 @@ export async function enqueue(db: DbOrTx, queue: JobQueue | null, input: Enqueue
     })
     .onConflictDoNothing({ target: jobs.idempotencyKey })
     .returning({ id: jobs.id });
-  if (row && queue) await queue.send(row.id, input.delaySeconds ?? 0);
+  if (row && queue) await queue.send(row.id, input.delaySeconds ?? 0, isUrgent(input.kind));
   return row ? { id: row.id, created: true } : { id: null, created: false };
 }
 
-export async function dispatch(queue: JobQueue, ids: (string | null)[]) {
-  for (const id of ids) if (id) await queue.send(id);
+export async function dispatch(queue: JobQueue, ids: (string | null)[], opts: { urgent?: boolean } = {}) {
+  for (const id of ids) if (id) await queue.send(id, 0, opts.urgent ?? false);
 }
+
+/** Discovery pages run before audits: they are few, and each one feeds many audits. */
+export const isUrgent = (kind: JobKind) => kind === "discover_query";
 
 /**
  * Run one job if it is due. Safe to call twice for the same id (a queue may
@@ -90,7 +93,7 @@ export async function runJob(
         runAfter: new Date(rt.now().getTime() + delay * 1000),
       })
       .where(eq(jobs.id, job.id));
-    await rt.queue.send(job.id, delay);
+    await rt.queue.send(job.id, delay, isUrgent(job.kind));
     return "failed";
   }
 }
@@ -113,12 +116,12 @@ export async function sweepJobs(rt: Runtime, limit = 50): Promise<number> {
     .set({ status: "failed", lastError: "Stale: worker stopped while running", runAfter: now })
     .where(and(eq(jobs.status, "running"), lt(jobs.startedAt, staleBefore)));
   const due = await rt.db
-    .select({ id: jobs.id })
+    .select({ id: jobs.id, kind: jobs.kind })
     .from(jobs)
     .where(and(inArray(jobs.status, ["pending", "failed"]), lte(jobs.runAfter, now)))
-    .orderBy(jobs.runAfter)
+    .orderBy(sql`${jobs.kind} = 'discover_query' desc`, jobs.runAfter)
     .limit(limit);
-  for (const j of due) await rt.queue.send(j.id);
+  for (const j of due) await rt.queue.send(j.id, 0, isUrgent(j.kind));
   return due.length;
 }
 
@@ -132,9 +135,9 @@ export async function retryJob(db: Db, queue: JobQueue, id: string): Promise<boo
       maxAttempts: sql`greatest(${jobs.maxAttempts}, ${jobs.attempts} + 1)`,
     })
     .where(and(eq(jobs.id, id), inArray(jobs.status, ["failed", "dead"])))
-    .returning({ id: jobs.id });
+    .returning({ id: jobs.id, kind: jobs.kind });
   if (!row) return false;
-  await queue.send(row.id);
+  await queue.send(row.id, 0, isUrgent(row.kind));
   return true;
 }
 

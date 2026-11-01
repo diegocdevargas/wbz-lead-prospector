@@ -22,17 +22,25 @@ export class MemoryQueue implements JobQueue {
     this.rt = rt;
   }
 
-  async send(jobId: string, delaySeconds = 0) {
+  async send(jobId: string, delaySeconds = 0, urgent = false) {
     if (delaySeconds > 0) {
-      setTimeout(() => this.push(jobId), delaySeconds * 1000).unref?.();
+      setTimeout(() => this.push(jobId, urgent), delaySeconds * 1000).unref?.();
     } else {
-      this.push(jobId);
+      this.push(jobId, urgent);
     }
   }
 
-  private push(jobId: string) {
-    if (!this.waiting.includes(jobId)) this.waiting.push(jobId);
+  private push(jobId: string, urgent: boolean) {
+    const at = this.waiting.indexOf(jobId);
+    if (at >= 0) this.waiting.splice(at, 1);
+    if (urgent) this.waiting.unshift(jobId);
+    else this.waiting.push(jobId);
     this.pump();
+  }
+
+  /** Ids waiting to run, in order (for tests). */
+  get pending(): readonly string[] {
+    return this.waiting;
   }
 
   private pump() {

@@ -5,7 +5,8 @@ import type { FetchLike, Resolver } from "../lib/safe-fetch.ts";
 
 /** Carries job ids only; the jobs table holds the state. */
 export interface JobQueue {
-  send(jobId: string, delaySeconds?: number): Promise<void>;
+  /** `urgent` jobs go ahead of queued ones where the transport supports it (the local queue does). */
+  send(jobId: string, delaySeconds?: number, urgent?: boolean): Promise<void>;
 }
 
 /** Everything a background job needs. Tests swap `http` and `resolve` for fixtures. */
@@ -33,9 +34,9 @@ export function placesLimiter(ratePerSecond: number): TokenBucket {
 
 /** Collects job ids instead of running them; tests drain it explicitly. */
 export class ManualQueue implements JobQueue {
-  readonly sent: { jobId: string; delaySeconds: number }[] = [];
-  async send(jobId: string, delaySeconds = 0) {
-    this.sent.push({ jobId, delaySeconds });
+  readonly sent: { jobId: string; delaySeconds: number; urgent?: boolean }[] = [];
+  async send(jobId: string, delaySeconds = 0, urgent = false) {
+    this.sent.push({ jobId, delaySeconds, ...(urgent ? { urgent } : {}) });
   }
   take() {
     return this.sent.splice(0);

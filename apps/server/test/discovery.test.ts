@@ -111,6 +111,22 @@ describe("discovery (Google Places)", () => {
     expect(await db.select().from(companies).where(eq(companies.placeId, "ChIJtest0005"))).toHaveLength(0);
   });
 
+  it("clicking Run twice queues each page once (no duplicate jobs, pages or leads)", async () => {
+    const { http, calls } = googleAndSites();
+    const { rt, queue } = makeRuntime(db, http);
+    const id = await newCampaign(100, ["Chapecó", "Erechim"]);
+    await startCampaign(rt, id);
+    await startCampaign(rt, id);
+    const first = queue.take();
+    expect(first).toHaveLength(2); // one page-1 job per city, not four
+    expect(first.every((s) => s.urgent)).toBe(true);
+    queue.sent.push(...first);
+    await drain(rt, queue);
+    expect(calls.filter((c) => c.url.includes(":searchText"))).toHaveLength(4); // 2 cities × 2 pages, each billed once
+    expect(await db.select().from(discoveryQueries)).toHaveLength(4);
+    expect(await db.select().from(companies)).toHaveLength(4);
+  });
+
   it("re-running a campaign bills nothing twice and creates no duplicates", async () => {
     const { id, rt, queue, calls } = await run();
     const before = calls.length;
