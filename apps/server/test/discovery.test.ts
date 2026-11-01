@@ -15,6 +15,7 @@ import {
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createCampaign, startCampaign, updateCampaignCap } from "../src/services/discovery.ts";
+import { BudgetExhaustedError, chargePlacesRequest, discoveryReserve } from "../src/services/google.ts";
 import { runPrune } from "../src/services/prune.ts";
 import { drain, googleAndSites, makeRuntime } from "./fakes.ts";
 import { SECRET, useTestDb } from "./helpers.ts";
@@ -161,6 +162,44 @@ describe("discovery (Google Places)", () => {
     await drain(rt, queue);
     expect((await db.select().from(discoveryQueries)).every((q) => q.status === "done")).toBe(true);
     expect(await updateCampaignCap(rt, id, 1)).toBe(false); // below what was used
+  });
+});
+
+describe("Places budget: search pages first", () => {
+  it("reserves what open pages and unqueried cities may still need", async () => {
+    const id = await newCampaign(10, ["Chapecó", "Erechim", "Sarandi"]);
+    await db.insert(discoveryQueries).values([
+      { campaignId: id, city: "Chapecó", page: 1, query: "q", status: "done" },
+      { campaignId: id, city: "Chapecó", page: 2, query: "q", status: "pending" },
+      { campaignId: id, city: "Erechim", page: 1, query: "q", status: "skipped_budget" },
+    ]);
+    // Chapecó page 2 (+ page 3) = 2, Erechim pages 1-3 = 3, Sarandi not started = 3.
+    expect(await discoveryReserve(db, id, 3)).toBe(8);
+  });
+
+  it("a review lookup cannot spend the reserve, a search page can", async () => {
+    const id = await newCampaign(3);
+    await chargePlacesRequest(db, id, 0.032, 2); // used 0 + reserve 2 < 3: ok
+    await expect(chargePlacesRequest(db, id, 0.032, 2)).rejects.toBeInstanceOf(BudgetExhaustedError);
+    await chargePlacesRequest(db, id, 0.032); // the search page itself still fits
+    await chargePlacesRequest(db, id, 0.032);
+    const [c] = await db.select().from(campaigns).where(eq(campaigns.id, id));
+    expect(c?.placesRequestsUsed).toBe(3);
+  });
+
+  it("skips the review lookup for leads with few Google reviews", async () => {
+    const { http, calls } = googleAndSites();
+    const { rt, queue } = makeRuntime(db, http, {
+      APP_CONFIG: JSON.stringify({ places: { reviewSignalsMinReviews: 100 } }),
+    });
+    const id = await newCampaign();
+    await startCampaign(rt, id);
+    await drain(rt, queue);
+    expect(calls.some((c) => c.url.includes("/places/") && !c.url.includes(":searchText"))).toBe(false);
+    const [c] = await db.select().from(campaigns).where(eq(campaigns.id, id));
+    expect(c?.placesRequestsUsed).toBe(2); // the two search pages only
+    const [a] = await db.select().from(audits).limit(1);
+    expect(a?.reviewSignals).toBeNull();
   });
 });
 

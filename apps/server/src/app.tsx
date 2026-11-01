@@ -33,11 +33,14 @@ import {
   dismissCandidate,
   exportLead,
   filterOptions,
+  getGroup,
   getLead,
+  groupCandidate,
   listDedupeQueue,
   listLeads,
   listSuppressions,
   mergeCandidate,
+  ungroupLead,
 } from "./services/leads.ts";
 import { type JobQueue, placesLimiter, type Runtime } from "./services/runtime.ts";
 import { CampaignPage, CampaignsPage, NewCampaignPage } from "./views/campaigns.tsx";
@@ -243,7 +246,11 @@ export function createApp(
     const lead = await getLead(c.var.db, id);
     if (!lead) return c.notFound();
     const tab = c.req.query("tab") === "audit" ? "audit" : "overview";
-    const [audit, pendingAudit] = await Promise.all([latestAudit(c.var.db, id), auditPending(c.var.db, id)]);
+    const [audit, pendingAudit, group] = await Promise.all([
+      latestAudit(c.var.db, id),
+      auditPending(c.var.db, id),
+      getGroup(c.var.db, lead.company),
+    ]);
     const added = c.req.query("added");
     const flash =
       added === "merged"
@@ -255,7 +262,9 @@ export function createApp(
             : added === "audit"
               ? { kind: "ok" as const, text: "Audit queued. Refresh in a minute to see the findings." }
               : null;
-    return c.html(<LeadPage {...lead} flash={flash} tab={tab} audit={audit} auditPending={pendingAudit} />);
+    return c.html(
+      <LeadPage {...lead} flash={flash} tab={tab} audit={audit} auditPending={pendingAudit} group={group} />,
+    );
   });
 
   app.post("/leads/:id/audit", async (c) => {
@@ -428,7 +437,14 @@ export function createApp(
   app.get("/dedupe", async (c) => {
     const items = await listDedupeQueue(c.var.db);
     const done = c.req.query("done");
-    const flash = done === "merged" ? "Merged." : done === "dismissed" ? "Marked as not a duplicate." : null;
+    const flash =
+      done === "merged"
+        ? "Merged."
+        : done === "dismissed"
+          ? "Marked as not a duplicate."
+          : done === "grouped"
+            ? "Linked as a branch of the same group."
+            : null;
     return c.html(<DedupePage items={items} flash={flash} />);
   });
 
@@ -436,6 +452,18 @@ export function createApp(
     const keptId = await mergeCandidate(c.var.db, idParam(c.req.param("id")));
     if (!keptId) return c.notFound();
     return c.redirect("/dedupe?done=merged", 303);
+  });
+
+  app.post("/dedupe/:id/group", async (c) => {
+    const headId = await groupCandidate(c.var.db, idParam(c.req.param("id")));
+    if (!headId) return c.notFound();
+    return c.redirect("/dedupe?done=grouped", 303);
+  });
+
+  app.post("/leads/:id/ungroup", async (c) => {
+    const id = idParam(c.req.param("id"));
+    if (!(await ungroupLead(c.var.db, id))) return c.notFound();
+    return c.redirect(`/leads/${id}`, 303);
   });
 
   app.post("/dedupe/:id/dismiss", async (c) => {

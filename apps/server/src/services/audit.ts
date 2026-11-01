@@ -42,7 +42,12 @@ export async function runAudit(rt: Runtime, payload: Record<string, unknown>) {
         )[0]?.id;
 
   let reviews: AuditFacts["reviews"] = null;
-  if (cfg.places.reviewSignals && company.placeId && campaignId && rt.settings.env.GOOGLE_API_KEY) {
+  const canReadReviews = cfg.places.reviewSignals && company.placeId && campaignId && rt.settings.env.GOOGLE_API_KEY;
+  // Each lookup is a paid Place Details request: only worth it when there are enough reviews to read.
+  const enoughReviews = (company.googleReviewCount ?? 0) >= cfg.places.reviewSignalsMinReviews;
+  if (canReadReviews && !enoughReviews) {
+    notes.push(`reviews skipped: fewer than ${cfg.places.reviewSignalsMinReviews} Google reviews`);
+  } else if (canReadReviews && company.placeId && campaignId) {
     try {
       reviews = await placeReviewSignals(rt, company.placeId, campaignId);
     } catch (err) {

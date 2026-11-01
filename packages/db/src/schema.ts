@@ -11,6 +11,7 @@ import {
 } from "@wbz/core";
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   check,
   index,
   integer,
@@ -28,7 +29,7 @@ export const stageEnum = pgEnum("stage", STAGES);
 export const leadSourceEnum = pgEnum("lead_source", LEAD_SOURCES);
 export const suppressionKindEnum = pgEnum("suppression_kind", SUPPRESSION_KINDS);
 export const dedupeRuleEnum = pgEnum("dedupe_rule", DEDUPE_RULES);
-export const dedupeStatusEnum = pgEnum("dedupe_status", ["pending", "dismissed"]);
+export const dedupeStatusEnum = pgEnum("dedupe_status", ["pending", "dismissed", "grouped"]);
 export const actorEnum = pgEnum("actor", ["system", "diego"]);
 export const campaignStatusEnum = pgEnum("campaign_status", CAMPAIGN_STATUSES);
 export const jobKindEnum = pgEnum("job_kind", JOB_KINDS);
@@ -72,6 +73,11 @@ export const companies = pgTable(
     googleRating: real("google_rating"),
     googleReviewCount: integer("google_review_count"),
     placesFetchedAt: timestamp("places_fetched_at", { withTimezone: true }),
+    /**
+     * Branch of a chain: points at the group's main lead (one level, never a chain of pointers).
+     * The main lead has null here. Outreach (M3) drafts only for the main lead.
+     */
+    groupId: uuid("group_id").references((): AnyPgColumn => companies.id, { onDelete: "set null" }),
     /** Cache of the latest audit, for list filters. */
     platform: platformEnum("platform"),
     lastAuditedAt: timestamp("last_audited_at", { withTimezone: true }),
@@ -87,6 +93,8 @@ export const companies = pgTable(
     index("companies_city_idx").on(t.cityNormalized),
     index("companies_stage_idx").on(t.stage),
     uniqueIndex("companies_place_id_key").on(t.placeId),
+    index("companies_group_idx").on(t.groupId),
+    check("companies_group_not_self", sql`${t.groupId} <> ${t.id}`),
     index("companies_created_idx").on(t.createdAt, t.id),
     index("companies_match_name_trgm_idx").using("gin", sql`${t.matchName} gin_trgm_ops`),
     check("companies_cnpj_format", sql`${t.cnpj} ~ '^[0-9]{14}$'`),

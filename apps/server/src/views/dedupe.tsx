@@ -28,6 +28,12 @@ export function DedupePage(p: { items: Item[]; flash?: string | null }) {
       <h1>Possible duplicates ({p.items.length})</h1>
       {p.flash && <Flash kind="ok">{p.flash}</Flash>}
       {p.items.length === 0 && <p class="muted">Nothing to review.</p>}
+      {p.items.length > 0 && (
+        <p class="muted small">
+          Merge: the same business, keep one lead. Same group: another unit of the same business (a branch); both stay,
+          linked, and outreach goes to the main lead only. Not a duplicate: unrelated businesses.
+        </p>
+      )}
       {p.items.map((it) => (
         <section class="card">
           <p>
@@ -59,6 +65,11 @@ export function DedupePage(p: { items: Item[]; flash?: string | null }) {
           <p>
             <form class="inline" method="post" action={`/dedupe/${it.id}/merge`}>
               <button type="submit">Merge new into existing</button>
+            </form>{" "}
+            <form class="inline" method="post" action={`/dedupe/${it.id}/group`}>
+              <button class="secondary" type="submit">
+                Same group (branch)
+              </button>
             </form>{" "}
             <form class="inline" method="post" action={`/dedupe/${it.id}/dismiss`}>
               <button class="secondary" type="submit">

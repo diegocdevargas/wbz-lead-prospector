@@ -69,7 +69,11 @@ For each row:
    - Same city and niche-stripped name similarity ≥ `fuzzyThreshold`: **review**. Fuzzy matches never merge on their own.
 5. Merges only fill empty fields; they never overwrite. Every value is also written to `field_sources` with its source and date.
 
-"Review" creates the lead and queues the pair on the Duplicates page, where you merge or dismiss it.
+"Review" creates the lead and queues the pair on the Duplicates page, where you choose:
+
+- **Merge**: the same business; one lead is kept.
+- **Same group (branch)**: another unit of the same business. Both leads stay, linked to the group's main lead ([ADR-0006](docs/decisions/0006-lead-groups.md)). Outreach (M3) goes to the main lead only, and an opt-out applies to the whole group. Undo it from the lead page.
+- **Not a duplicate**: unrelated businesses.
 
 Name similarity uses pg_trgm's algorithm. `packages/core/src/similarity.ts` reimplements it exactly (tests check it against Postgres's own values), so the decision logic stays pure and testable.
 
@@ -82,7 +86,7 @@ Name similarity uses pg_trgm's algorithm. `packages/core/src/similarity.ts` reim
    - No website: a `no_website` finding.
    - Website: fetched through the SSRF-safe fetcher (http(s) on 80/443, public IPs only on every redirect, 5 redirects, 10 s, 2 MB, no cookies). HTML checks: HTTPS, viewport, title/description, H1s, WhatsApp link, online booking, contact form, copyright year, platform (WordPress, WooCommerce, Shopify, Nuvemshop, VTEX, Linx, Tray, Loja Integrada, Wix, Squarespace, custom), chat widget, and 20 internal links checked for 404/5xx.
    - **PageSpeed Insights** (mobile): score, LCP, CLS and INP (INP is real-user data, so small sites often have none).
-   - **Google reviews** (Place Details, up to 5 reviews): counted for pain phrases ("demoram para responder", "difícil agendar", ...). Only the counts are kept; text and reviewer names are discarded in memory.
+   - **Google reviews** (Place Details, up to 5 reviews): counted for pain phrases ("demoram para responder", "difícil agendar", ...). Only the counts are kept; text and reviewer names are discarded in memory. Looked up only for places with at least `places.reviewSignalsMinReviews` (10) reviews, and never with the part of the cap that search pages may still need: open and skipped pages, the pages after them and cities not queried yet are reserved first, so finding businesses always comes before reading their reviews.
    - Findings are deterministic rules (`packages/core/src/findings.ts`, thresholds in config), written in Portuguese with the number behind them, e.g. "Site leva 9,2s para carregar no celular (PageSpeed 23/100)." The lead moves `discovered → audited`.
    - What the site itself confirms (name, phone, website, Instagram handle) is recorded in `field_sources` as `website_audit`.
 5. **Retention** (daily job, [ADR-0004](docs/decisions/0004-google-places-retention.md)): Google's terms only allow keeping `place_id` indefinitely. Places values (phone, website, address, Maps URL, rating, review count) expire after 30 days unless another source backs them (the site, CNPJ, a manual import). The name is kept as the lead's identifier. Cached API responses expire; audit HTML excerpts are deleted after 90 days.

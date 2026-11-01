@@ -9,7 +9,7 @@ import {
   type TextSearchResponse,
   textSearchResponseSchema,
 } from "@wbz/core";
-import { apiCache, campaigns, type DbOrTx } from "@wbz/db";
+import { apiCache, campaigns, type DbOrTx, discoveryQueries } from "@wbz/db";
 import { and, eq, gt, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import { sha256Hex } from "../lib/hash.ts";
@@ -64,16 +64,48 @@ export async function pruneCache(db: DbOrTx, now: Date) {
  * Reserve one Places request against the campaign cap BEFORE calling Google.
  * A single conditional UPDATE, so concurrent jobs cannot overshoot the cap.
  */
-export async function chargePlacesRequest(db: DbOrTx, campaignId: string, costUsd: number): Promise<void> {
+export async function chargePlacesRequest(
+  db: DbOrTx,
+  campaignId: string,
+  costUsd: number,
+  /** Requests to leave untouched for other work (search pages). The charge fails if it would eat into them. */
+  reserve = 0,
+): Promise<void> {
   const [row] = await db
     .update(campaigns)
     .set({
       placesRequestsUsed: sql`${campaigns.placesRequestsUsed} + 1`,
       estCostUsd: sql`${campaigns.estCostUsd} + ${costUsd}`,
     })
-    .where(and(eq(campaigns.id, campaignId), lt(campaigns.placesRequestsUsed, campaigns.placesRequestCap)))
+    .where(
+      and(
+        eq(campaigns.id, campaignId),
+        lt(sql`${campaigns.placesRequestsUsed} + ${reserve}::int`, campaigns.placesRequestCap),
+      ),
+    )
     .returning({ id: campaigns.id });
   if (!row) throw new BudgetExhaustedError(campaignId);
+}
+
+/**
+ * Search pages the campaign may still need: every pending or budget-skipped
+ * page plus the pages after it, and every city not queried yet. Place Details
+ * (reviews) may only spend what is left above this, so finding businesses
+ * always comes before reading their reviews. Slightly generous on purpose:
+ * a page with no next page simply leaves the reserve unused.
+ */
+export async function discoveryReserve(db: DbOrTx, campaignId: string, maxPages: number): Promise<number> {
+  const [c] = await db.select({ cities: campaigns.cities }).from(campaigns).where(eq(campaigns.id, campaignId));
+  if (!c) return 0;
+  const rows = await db
+    .select({ city: discoveryQueries.city, page: discoveryQueries.page, status: discoveryQueries.status })
+    .from(discoveryQueries)
+    .where(eq(discoveryQueries.campaignId, campaignId));
+  const started = new Set(rows.map((r) => r.city));
+  const open = rows
+    .filter((r) => r.status === "pending" || r.status === "skipped_budget")
+    .reduce((n, r) => n + Math.max(1, maxPages - r.page + 1), 0);
+  return open + c.cities.filter((city) => !started.has(city)).length * maxPages;
 }
 
 function requireKey(rt: Runtime): string {
@@ -137,7 +169,8 @@ export async function placeReviewSignals(rt: Runtime, placeId: string, campaignI
   const hit = await cacheGet(rt.db, "places_details", placeId, rt.now());
   if (hit) return hit as ReturnType<typeof countPainPhrases>;
   const key = requireKey(rt);
-  await chargePlacesRequest(rt.db, campaignId, cfg.placeDetailsCostUsd);
+  const reserve = await discoveryReserve(rt.db, campaignId, cfg.maxPagesPerQuery);
+  await chargePlacesRequest(rt.db, campaignId, cfg.placeDetailsCostUsd, reserve);
   await rt.placesLimiter.take();
   const url = `${placeDetailsUrl(placeId)}?languageCode=${encodeURIComponent(cfg.languageCode)}`;
   const json = await googleJson(

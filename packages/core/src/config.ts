@@ -97,6 +97,8 @@ export const appConfigSchema = z.object({
       ratePerSecond: z.number().positive().default(5),
       /** Fetch the 5 most relevant reviews (Place Details) during the audit and count pain phrases. */
       reviewSignals: z.boolean().default(true),
+      /** Only look up reviews for places with at least this many Google reviews (fewer rarely say anything useful). */
+      reviewSignalsMinReviews: z.number().int().min(0).default(10),
       languageCode: z.string().default("pt-BR"),
       regionCode: z.string().default("BR"),
     })

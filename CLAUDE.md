@@ -110,7 +110,7 @@ Daily digest at 8:00 America/Sao_Paulo: new A-tier leads, drafts awaiting approv
 3. After each milestone: what works, how to run it, what's next, and any decision I need to make.
 4. Prefer boring, well-documented libraries. Don't add dependencies without saying why.
 5. **Workflow:** one branch and PR per milestone (or smaller), from the latest `main`. CI green (lint, typecheck, migrations check, tests, audit) and my review before merge. Run the `security-review` skill on the diff before asking for review. Conventional, descriptive commit messages.
-6. **Decisions** that change the stack, data model or a rule go in `docs/decisions/NNNN-title.md` (short ADR: context, options, decision, consequences) and are linked from here. M2: [0004 Google Places retention](docs/decisions/0004-google-places-retention.md), [0005 jobs table](docs/decisions/0005-jobs-table.md).
+6. **Decisions** that change the stack, data model or a rule go in `docs/decisions/NNNN-title.md` (short ADR: context, options, decision, consequences) and are linked from here. M2: [0004 Google Places retention](docs/decisions/0004-google-places-retention.md), [0005 jobs table](docs/decisions/0005-jobs-table.md), [0006 lead groups](docs/decisions/0006-lead-groups.md).
 7. **Keep it reusable** (it may become a portfolio piece and a product for other clients): no Webcraftz-specific values in code, offer and brand injected into prompts from config, scoring rules as data. One isolated instance per client, never multi-tenant (ADR-0002). Details and what is deliberately left out: `docs/productization.md`.
 
 ### Source of truth
