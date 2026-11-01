@@ -545,7 +545,14 @@ export function createApp(
           : done === "cap"
             ? { kind: "ok" as const, text: "Cap updated." }
             : null;
-    return c.html(<CampaignPage {...data} discoveryEnabled={discoveryEnabled} flash={flash} />);
+    return c.html(
+      <CampaignPage
+        {...data}
+        discoveryEnabled={discoveryEnabled}
+        maxPages={config.places.maxPagesPerQuery}
+        flash={flash}
+      />,
+    );
   });
 
   app.post("/campaigns/:id/run", async (c) => {
