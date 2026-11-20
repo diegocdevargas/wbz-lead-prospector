@@ -14,7 +14,7 @@
     "migrate:test": "tsx src/migrate.ts --test"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.2.0",
+    "@neondatabase/serverless": "^1.2.1",
     "@wbz/core": "workspace:*",
     "drizzle-orm": "^0.45.4",
     "pg": "^8.23.1"
